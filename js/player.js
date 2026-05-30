@@ -16,10 +16,11 @@ import {
   HEAL_ANIMATION_DURATION, HEAL_TICKS, HEAL_AMOUNT,
   HIT_STOP_FRAMES, SKILL_DAMAGE, INV_FRAMES, GROUND_Y, C,
   SKILL_POINTS_PER_LEVEL, ARROW_SPEED, ARROW_DAMAGE, ARROW_RANGE, ARROW_COST,
+  WATER_GRAVITY, SWIM_FORCE, WATER_SPEED_MULT,
 } from './config.js';
 import { playSound } from './audio.js';
-import { justPressed } from './input.js';
-import { tileCollision, getTileType } from './physics.js';
+import { justPressed, keys as inputKeys } from './input.js';
+import { tileCollision, getTileType, setDropThrough } from './physics.js';
 import { spawnParticle, spawnFloatingText, particles } from './particles.js';
 import { inventory, getComputedStats, useHealthPotion, updateBuffs, countHealthPotions, addItem } from './inventory.js';
 import { WEAPONS, ARMORS, ACCESSORIES, POTIONS } from './config.js';
@@ -65,6 +66,10 @@ export const player = {
   currentStageId: 0,
   // Last death penalty
   lastLostRupiah: 0,
+  // Drop-through platform timer
+  dropThrough: 0,
+  // Water swimming state
+  inWater: false,
 };
 
 // Shared mutable state references (set from game.js)
@@ -90,6 +95,23 @@ function getStats() {
 }
 
 export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tileMap, startDialog, initPuzzle) {
+  // ---- ALWAYS process input buffering, even during hitstop/stun ----
+  // This fixes the critical bug where jump input was lost during hitstop
+  // because justPressed() only returns true for 1 frame and savePrevKeys()
+  // is called at the end of the game loop regardless of early returns.
+  if (justPressed('ArrowUp') || justPressed('KeyW')) player.jumpBufferTimer = JUMP_BUFFER_TIME;
+  else if (player.jumpBufferTimer > 0) player.jumpBufferTimer--;
+
+  // Drop-through: Down+Jump on one-way platforms
+  if ((justPressed('ArrowDown') || justPressed('KeyS')) && player.grounded) {
+    player.dropThrough = 8; // 8 frames of dropping through
+    setDropThrough(true);
+  }
+  if (player.dropThrough > 0) {
+    player.dropThrough--;
+    if (player.dropThrough <= 0) setDropThrough(false);
+  }
+
   if (hitStopRef.value > 0) return;
 
   // Update buffs
@@ -165,10 +187,6 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
   if (player.grounded) player.coyoteTimer = COYOTE_TIME;
   else if (player.coyoteTimer > 0) player.coyoteTimer--;
 
-  // ---- JUMP BUFFER ----
-  if (justPressed('ArrowUp') || justPressed('KeyW')) player.jumpBufferTimer = JUMP_BUFFER_TIME;
-  else if (player.jumpBufferTimer > 0) player.jumpBufferTimer--;
-
   // ---- PARRY ----
   if (player.parryTimer > 0) {
     player.parryTimer--;
@@ -181,8 +199,8 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
     player.parryWindow = 0;
   }
 
-  // Effective speed (from equipment + buffs + slow)
-  const effectiveSpeed = stats.speed * (player.slowTimer > 0 ? 0.5 : 1.0);
+  // Effective speed (from equipment + buffs + slow + water)
+  const effectiveSpeed = stats.speed * (player.slowTimer > 0 ? 0.5 : 1.0) * (player.inWater ? WATER_SPEED_MULT : 1.0);
 
   // ---- DODGE ----
   if (player.dodging) {
@@ -519,8 +537,25 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
 }
 
 function applyGravityAndCollision(tileMap) {
-  player.vy += GRAVITY;
-  if (player.vy > MAX_FALL) player.vy = MAX_FALL;
+  // Check if player is in water (tile type 4)
+  const wtx = Math.floor((player.x + player.w / 2) / 32);
+  const wty = Math.floor((player.y + player.h / 2) / 32);
+  const waterTile = getTileType(wtx, wty);
+  player.inWater = waterTile === 4;
+
+  if (player.inWater) {
+    // Water swimming: reduced gravity, swim-up with jump
+    player.vy += WATER_GRAVITY;
+    if (player.vy > MAX_FALL * 0.4) player.vy = MAX_FALL * 0.4; // slower sink
+    // Swim up when pressing jump
+    if (inputKeys['ArrowUp'] || inputKeys['KeyW']) {
+      player.vy += SWIM_FORCE * 0.15; // gradual swim-up
+    }
+  } else {
+    player.vy += GRAVITY;
+    if (player.vy > MAX_FALL) player.vy = MAX_FALL;
+  }
+
   player.x += player.vx;
   const colsX = tileCollision(player.x, player.y, player.w, player.h, player.prevY);
   colsX.forEach(c => {
@@ -708,6 +743,7 @@ export function resetPlayer() {
     poisonTimer: 0, stunTimer: 0, slowTimer: 0, lavaDamageTimer: 0,
     currentStageId: 0,
     lastLostRupiah: 0,
+    dropThrough: 0, inWater: false,
   });
 }
 
@@ -727,5 +763,6 @@ export function respawnPlayer() {
   player.attackCombo = 0; player.hurtTimer = 0;
   player.coyoteTimer = 0; player.jumpBufferTimer = 0;
   player.poisonTimer = 0; player.stunTimer = 0; player.slowTimer = 0;
+  player.dropThrough = 0; player.inWater = false;
   gameStateRef.value = 'playing';
 }

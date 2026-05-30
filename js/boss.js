@@ -11,6 +11,9 @@ import { tileCollision } from './physics.js';
 import { spawnParticle, spawnFloatingText, particles as particlesList } from './particles.js';
 import { damagePlayer } from './player.js';
 
+// Boss summon queue (consumed by game.js)
+export const bossSummonQueue = [];
+
 export function updateBoss(boss, bossActive, hitStopTimer, player) {
   if (!boss || !boss.alive || !bossActive) return;
   if (hitStopTimer > 0) return;
@@ -366,6 +369,7 @@ export function executeBossAttack(boss, player) {
 
     case 'summonMinions':
       boss.summonCount = (boss.summonCount || 0) + 1;
+      bossSummonQueue.push({ stageId: boss.stageId, count: 2 });
       spawnFloatingText(boss.x + boss.w / 2, boss.y - 20, 'Memanggil!', C.red);
       spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 2, C.goldDark, 15, 5, 30);
       playSound('boss');
@@ -522,6 +526,7 @@ export function executeBossAttack(boss, player) {
 
     case 'summonPhase':
       boss.summonCount = (boss.summonCount || 0) + 2;
+      bossSummonQueue.push({ stageId: boss.stageId, count: 3 });
       spawnFloatingText(boss.x + boss.w / 2, boss.y - 30, 'Raksasa Memanggil!', C.red);
       spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 2, C.red, 20, 5, 40);
       playSound('boss');

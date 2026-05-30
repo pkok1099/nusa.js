@@ -6,6 +6,10 @@ import { TILE } from './config.js';
 
 let tileMap = [];
 
+// Drop-through platform state (set from player.js)
+let dropThroughActive = false;
+export function setDropThrough(active) { dropThroughActive = active; }
+
 export function setTileMap(map) { tileMap = map; }
 export function getTileMap() { return tileMap; }
 
@@ -33,6 +37,8 @@ export function tileCollision(x, y, w, h, previousY) {
         }
         // One-way platforms: 2, 6 (vine)
         else if (tile === 2 || tile === 6) {
+          // Skip one-way platforms when dropping through
+          if (dropThroughActive) continue;
           const prevBottom = previousY !== undefined ? previousY + h : y + h;
           const platTop = ty * TILE;
           if (prevBottom <= platTop + 4 && y + h > platTop) {

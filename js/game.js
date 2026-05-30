@@ -2,18 +2,19 @@
 // game.js — Main game state machine, initialization, and loop
 // ============================================================
 
-import { GAME_W, GAME_H, STAGES, WEAPONS, ARMORS, ACCESSORIES, POTIONS } from './config.js';
+import { GAME_W, GAME_H, STAGES, WEAPONS, ARMORS, ACCESSORIES, POTIONS, C } from './config.js';
 import { initAudio, playSound } from './audio.js';
 import { keys, savePrevKeys, setupInput, justPressed } from './input.js';
 import { setTileMap } from './physics.js';
 import { camera, updateCamera } from './camera.js';
-import { particles, floatingTexts, updateParticles, clearParticles } from './particles.js';
+import { particles, floatingTexts, updateParticles, clearParticles, spawnFloatingText } from './particles.js';
 import { initRenderer } from './renderer.js';
 import { generateLevel } from './level.js';
-import { spawnEntities, createBoss } from './entities.js';
+import { spawnEntities, createBoss, createEnemy } from './entities.js';
 import { player, updatePlayer, damagePlayer, gainExp, resetPlayer, respawnPlayer, setStateRefs, bossDropQueue } from './player.js';
 import { updateEnemies, setEnemyShakeRef } from './enemy.js';
 import { updateBoss } from './boss.js';
+import { bossSummonQueue } from './boss.js';
 import { initPuzzle, getPuzzleState, resetPuzzle } from './puzzle.js';
 import { startDialog, updateDialog } from './dialog.js';
 import { inventory, getComputedStats, equipItem, unequipSlot, usePotion, allocateStat, updateBuffs, resetInventory, addItem } from './inventory.js';
@@ -263,6 +264,24 @@ function gameLoop() {
           type: 'item', itemType: drop.type, subType: drop.subType,
           x: boss.x, y: boss.y, w: 16, h: 16, collected: false, bobOffset: Math.random() * Math.PI * 2,
         });
+      }
+
+      // Process boss summon queue
+      while (bossSummonQueue.length > 0) {
+        const summon = bossSummonQueue.shift();
+        const stage = STAGES[currentStageId];
+        const enemyTypes = stage ? stage.enemyTypes : ['batu_kecil'];
+        for (let i = 0; i < summon.count; i++) {
+          const type = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
+          const offsetX = (Math.random() - 0.5) * 100;
+          const ety = boss ? boss.y : player.y;
+          entities.push(createEnemy(
+            Math.floor((boss.x + offsetX) / 32),
+            Math.floor(ety / 32) - 1,
+            type
+          ));
+        }
+        spawnFloatingText(boss.x + boss.w / 2, boss.y - 40, `+${summon.count} Musuh!`, C.red);
       }
 
       // Toggle inventory with TAB or I

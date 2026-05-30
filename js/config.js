@@ -187,5 +187,10 @@ export const ARROW_DAMAGE = 15;
 export const ARROW_RANGE = 400;
 export const ARROW_COST = 15; // energy
 
+// Water swimming (Stage 3: Laut Bali)
+export const WATER_GRAVITY = 0.15;
+export const SWIM_FORCE = -3.5;
+export const WATER_SPEED_MULT = 0.6;
+
 // Buff system
 export const MAX_ACTIVE_BUFFS = 3;
