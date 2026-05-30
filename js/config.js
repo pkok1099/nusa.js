@@ -181,5 +181,11 @@ export const STAT_LABELS = { hp: 'HP', stamina: 'Stamina', energy: 'Energi', att
 export const STAT_PER_POINT = { hp: 15, stamina: 8, energy: 5, attack: 3, defense: 3, speed: 0.15 };
 export const SKILL_POINTS_PER_LEVEL = 2;
 
+// Bow / Arrow system (Panah Api weapon)
+export const ARROW_SPEED = 8;
+export const ARROW_DAMAGE = 15;
+export const ARROW_RANGE = 400;
+export const ARROW_COST = 15; // energy
+
 // Buff system
 export const MAX_ACTIVE_BUFFS = 3;

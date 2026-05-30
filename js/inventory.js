@@ -284,3 +284,13 @@ export function getPotionCounts() {
   });
   return counts;
 }
+
+// Count how many of a specific item id exist in inventory
+export function countItems(itemId) {
+  return inventory.items.filter(i => i.id === itemId).length;
+}
+
+// Return items filtered by category
+export function getItemsByCategory(category) {
+  return inventory.items.filter(i => i.category === category);
+}

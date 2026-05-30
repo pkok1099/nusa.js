@@ -14,11 +14,16 @@ import { getCurrentDialog } from './dialog.js';
 import { inventory, getComputedStats, getEquippedWeapon, getEquippedArmor, getEquippedAccessory, countHealthPotions, getPotionCounts } from './inventory.js';
 import { shopItems, shopState, TAB_NAMES, buyItem, sellItem, getCurrentTabItems, resetShopState } from './shop.js';
 import { WEAPONS, ARMORS, ACCESSORIES, POTIONS } from './config.js';
+import { hasSaveGame } from './save.js';
 
 let gameTime = 0;
 let currentStageId = 0;
 export function setGameTime(t) { gameTime = t; }
 export function setCurrentStageId(id) { currentStageId = id; }
+
+// Save indicator state
+let saveIndicatorTimer = 0;
+export function showSaveIndicator() { saveIndicatorTimer = 180; } // 3 seconds at 60fps
 
 // ---- BACKGROUND ----
 export function drawBackground() {
@@ -820,6 +825,91 @@ export function drawHUD(boss, bossActive, deathCount) {
   const stage = STAGES[currentStageId] || STAGES[0];
   drawText(stage.name, GAME_W / 2, 22, 11, C.gold + '60', 'center');
   drawText('WASD:Gerak  SPACE:Serang  F:Heavy  R:Parry  SHIFT:Dodge  Q:Skill  E:Interaksi  TAB:Inventori', GAME_W / 2, GAME_H - 6, 7, C.textDim, 'center');
+
+  // Save indicator
+  if (saveIndicatorTimer > 0) {
+    saveIndicatorTimer--;
+    const alpha = Math.min(1, saveIndicatorTimer / 60);
+    drawText('Tersimpan', GAME_W / 2, 40, 11, C.gold + Math.floor(alpha * 200).toString(16).padStart(2, '0'), 'center');
+  }
+}
+
+// ---- MINI-MAP ----
+let miniMapTileMap = null;
+export function setMiniMapData(tMap) { miniMapTileMap = tMap; }
+
+export function drawMiniMap(tileMap, entities, boss, bossActive) {
+  if (!tileMap || tileMap.length === 0) return;
+  const ctx = getCtx();
+  const mmW = 120, mmH = 60;
+  const mmX = GAME_W - mmW - 8, mmY = 42;
+
+  // Semi-transparent background
+  drawRect(mmX, mmY, mmW, mmH, '#000000AA', 3);
+  drawOutline(mmX, mmY, mmW, mmH, C.gold + '30', 1, 3);
+
+  const mapH = tileMap.length;
+  const mapW = tileMap[0] ? tileMap[0].length : 1;
+  const scaleX = mmW / mapW;
+  const scaleY = mmH / mapH;
+
+  // Draw tiles (1px per tile)
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(mmX, mmY, mmW, mmH);
+  ctx.clip();
+  for (let ty = 0; ty < mapH; ty++) {
+    for (let tx = 0; tx < mapW; tx++) {
+      const tile = tileMap[ty][tx];
+      if (tile === 0) continue;
+      const px = mmX + tx * scaleX;
+      const py = mmY + ty * scaleY;
+      let color = C.stone + '60';
+      if (tile === 2) color = C.gold + '40';
+      else if (tile === 3) color = C.lava + '80';
+      else if (tile === 4) color = C.water + '80';
+      else if (tile === 5) color = C.grass + '60';
+      else if (tile === 6) color = C.grassLight + '60';
+      else if (tile === 9) color = C.gold + 'AA';
+      ctx.fillStyle = color;
+      ctx.fillRect(px, py, Math.max(1, scaleX), Math.max(1, scaleY));
+    }
+  }
+
+  // Draw enemies (orange dots)
+  if (entities) {
+    entities.forEach(e => {
+      if (e.type === 'enemy' && e.alive) {
+        const ex = mmX + (e.x / TILE) * scaleX;
+        const ey = mmY + (e.y / TILE) * scaleY;
+        ctx.fillStyle = C.orange;
+        ctx.fillRect(ex - 1, ey - 1, 2, 2);
+      }
+      // NPCs (green dots)
+      if (e.type === 'npc') {
+        const nx = mmX + (e.x / TILE) * scaleX;
+        const ny = mmY + (e.y / TILE) * scaleY;
+        ctx.fillStyle = C.green;
+        ctx.fillRect(nx - 1, ny - 1, 3, 3);
+      }
+    });
+  }
+
+  // Boss (red dot)
+  if (bossActive && boss && boss.alive) {
+    const bx = mmX + (boss.x / TILE) * scaleX;
+    const by = mmY + (boss.y / TILE) * scaleY;
+    ctx.fillStyle = C.red;
+    ctx.fillRect(bx - 2, by - 2, 4, 4);
+  }
+
+  // Player (gold dot)
+  const plx = mmX + (player.x / TILE) * scaleX;
+  const ply = mmY + (player.y / TILE) * scaleY;
+  ctx.fillStyle = C.gold;
+  ctx.fillRect(plx - 2, ply - 2, 4, 4);
+
+  ctx.restore();
 }
 
 // ---- DIALOG ----
@@ -986,11 +1076,14 @@ export function drawInventory() {
     });
   }
 
-  // Close button
-  drawText('[TAB/ESC] Tutup', GAME_W / 2, GAME_H - 20, 12, C.textDim, 'center');
+  // Close button + save option
+  drawText('[TAB/ESC] Tutup  |  [S] Simpan', GAME_W / 2, GAME_H - 20, 12, C.textDim, 'center');
 
   if (justPressed('Escape') || justPressed('Tab') || justPressed('KeyI')) {
     return { action: 'close' };
+  }
+  if (justPressed('KeyS')) {
+    return { action: 'save' };
   }
   return null;
 }
@@ -1161,13 +1254,14 @@ export function drawStageSelect(unlockedStages) {
 
 // ---- MENU ----
 let menuSelection = 0;
-const menuItems = ['Mulai Permainan', 'Kontrol', 'Tentang'];
+let menuItems = ['Mulai Baru', 'Lanjutkan', 'Kontrol', 'Tentang'];
 let menuParticles = [];
 for (let i = 0; i < 30; i++) {
   menuParticles.push({ x: Math.random() * GAME_W, y: Math.random() * GAME_H, size: Math.random() * 2 + 1, speed: Math.random() * 0.5 + 0.2, alpha: Math.random() * 0.5 + 0.2 });
 }
 let showControls = false;
 let showAbout = false;
+let showNewGameConfirm = false;
 
 export function drawMenu() {
   const ctx = getCtx();
@@ -1196,16 +1290,38 @@ export function drawMenu() {
     ctx.save(); ctx.translate(ddx, dy); ctx.rotate(Math.PI / 4); ctx.fillRect(-3, -3, 6, 6); ctx.restore();
   }
 
+  // Build dynamic menu items
+  const saveExists = hasSaveGame();
+  const effectiveMenuItems = saveExists
+    ? ['Mulai Baru', 'Lanjutkan', 'Kontrol', 'Tentang']
+    : ['Mulai Baru', 'Kontrol', 'Tentang'];
+  menuItems = effectiveMenuItems;
+
+  // New game confirmation dialog
+  if (showNewGameConfirm) {
+    drawRect(GAME_W / 2 - 200, GAME_H / 2 - 60, 400, 120, '#0A0A0AE0', 8);
+    drawOutline(GAME_W / 2 - 200, GAME_H / 2 - 60, 400, 120, C.gold + '40', 2, 8);
+    drawText('Data simpanan akan hilang!', GAME_W / 2, GAME_H / 2 - 25, 14, C.text, 'center');
+    drawText('Mulai permainan baru?', GAME_W / 2, GAME_H / 2, 14, C.gold, 'center');
+    drawText('[SPACE] Ya  [ESC] Batal', GAME_W / 2, GAME_H / 2 + 35, 12, C.textDim, 'center');
+    if (justPressed('Space')) { showNewGameConfirm = false; return 'startGame'; }
+    if (justPressed('Escape')) { showNewGameConfirm = false; }
+    return null;
+  }
+
   if (!showControls && !showAbout) {
     menuItems.forEach((item, i) => {
       const y = 260 + i * 50;
       const isSelected = i === menuSelection;
       const w = 220, h = 40, x = GAME_W / 2 - w / 2;
+      const isLanjutkan = item === 'Lanjutkan';
       if (isSelected) {
         drawRect(x, y, w, h, C.gold + '15', 6); drawOutline(x, y, w, h, C.gold + '60', 2, 6);
         drawText('◆', x - 20, y + h / 2, 12, C.gold, 'center');
         drawText(item, GAME_W / 2, y + h / 2, 15, C.gold, 'center');
-      } else { drawText(item, GAME_W / 2, y + h / 2, 14, C.textDim, 'center'); }
+      } else {
+        drawText(item, GAME_W / 2, y + h / 2, 14, isLanjutkan ? C.textDim : C.textDim, 'center');
+      }
     });
   }
 
@@ -1213,8 +1329,8 @@ export function drawMenu() {
     drawRect(160, 60, GAME_W - 320, GAME_H - 120, '#0A0A0AE0', 8);
     drawOutline(160, 60, GAME_W - 320, GAME_H - 120, C.gold + '30', 2, 8);
     drawText('KONTROL', GAME_W / 2, 90, 20, C.gold, 'center');
-    const ctrls = [['W / ↑', 'Lompat'], ['A D / ← →', 'Gerak kiri/kanan'], ['SPACE', 'Serang Ringan (Combo 3x)'], ['F', 'Serang Berat'], ['R', 'Parry / Menangkis'], ['SHIFT', 'Dodge / Berguling'], ['Q', 'Skill Spesial'], ['E', 'Interaksi / Minum Ramuan'], ['TAB / I', 'Buka Inventori'], ['ESC', 'Kembali / Menu']];
-    ctrls.forEach((c, i) => { drawText(c[0], 220, 130 + i * 30, 12, C.gold, 'left'); drawText(c[1], 460, 130 + i * 30, 12, C.text, 'left'); });
+    const ctrls = [['W / ↑', 'Lompat'], ['A D / ← →', 'Gerak kiri/kanan'], ['SPACE', 'Serang Ringan (Combo 3x)'], ['SPACE + ↓', 'Tembak Panah Api (jika terpasang)'], ['F', 'Serang Berat'], ['R', 'Parry / Menangkis'], ['SHIFT', 'Dodge / Berguling'], ['Q', 'Skill Spesial'], ['E', 'Interaksi / Minum Ramuan'], ['TAB / I', 'Buka Inventori'], ['ESC', 'Kembali / Menu']];
+    ctrls.forEach((c, i) => { drawText(c[0], 220, 130 + i * 28, 12, C.gold, 'left'); drawText(c[1], 460, 130 + i * 28, 12, C.text, 'left'); });
     drawText('[ESC] Kembali', GAME_W / 2, GAME_H - 50, 12, C.textDim, 'center');
   }
 
@@ -1222,21 +1338,34 @@ export function drawMenu() {
     drawRect(180, 80, GAME_W - 360, GAME_H - 160, '#0A0A0AE0', 8);
     drawOutline(180, 80, GAME_W - 360, GAME_H - 160, C.gold + '30', 2, 8);
     drawText('TENTANG GAME', GAME_W / 2, 115, 20, C.gold, 'center');
-    const lines = ['NUSANTARA: Warisan Terakhir', 'Adventure RPG + Puzzle bertema mitologi Nusantara', '', '5 Tahap: Borobudur, Borneo, Bromo, Bali, Prambanan', '5 Boss unik dengan serangan berbeda', 'Sistem perlengkapan, ramuan, dan poin keahlian', '', 'Platform: HTML5 + JavaScript (Web Browser)', 'Genre: Adventure RPG + Puzzle (Souls-like Combat)'];
+    const lines = ['NUSANTARA: Warisan Terakhir', 'Adventure RPG + Puzzle bertema mitologi Nusantara', '', '5 Tahap: Borobudur, Borneo, Bromo, Bali, Prambanan', '5 Boss unik dengan serangan berbeda', 'Sistem perlengkapan, ramuan, dan poin keahlian', 'Simpan otomatis saat checkpoint & kalahkan boss', '', 'Platform: HTML5 + JavaScript (Web Browser)', 'Genre: Adventure RPG + Puzzle (Souls-like Combat)'];
     lines.forEach((l, i) => drawText(l, GAME_W / 2, 155 + i * 22, i === 0 ? 14 : 12, i === 0 ? C.gold : C.text + 'AA', 'center'));
     drawText('[ESC] Kembali', GAME_W / 2, GAME_H - 110, 12, C.textDim, 'center');
   }
 
-  drawText('v0.5 — Expansion Edition', GAME_W / 2, GAME_H - 30, 9, C.textDim, 'center');
+  drawText('v0.6 — Save/Load Edition', GAME_W / 2, GAME_H - 30, 9, C.textDim, 'center');
 
   if (justPressed('ArrowUp') || justPressed('KeyW')) menuSelection = (menuSelection - 1 + menuItems.length) % menuItems.length;
   if (justPressed('ArrowDown') || justPressed('KeyS')) menuSelection = (menuSelection + 1) % menuItems.length;
-  if (justPressed('Escape')) { showControls = false; showAbout = false; }
+  if (justPressed('Escape')) { showControls = false; showAbout = false; showNewGameConfirm = false; }
   if (justPressed('Space') || justPressed('Enter') || mouse.clicked) {
     if (showControls || showAbout) { /* ESC handles */ }
-    else if (menuSelection === 0) return 'startGame';
-    else if (menuSelection === 1) showControls = true;
-    else if (menuSelection === 2) showAbout = true;
+    else {
+      const selected = menuItems[menuSelection];
+      if (selected === 'Mulai Baru') {
+        if (saveExists) {
+          showNewGameConfirm = true;
+        } else {
+          return 'startGame';
+        }
+      } else if (selected === 'Lanjutkan') {
+        return 'continueGame';
+      } else if (selected === 'Kontrol') {
+        showControls = true;
+      } else if (selected === 'Tentang') {
+        showAbout = true;
+      }
+    }
     mouse.clicked = false;
   }
   return null;
@@ -1328,6 +1457,10 @@ export function drawGameOver(deathCount) {
     ctx.globalAlpha = textAlpha;
     drawText('KAMU MATI', GAME_W / 2, GAME_H / 2 - 40, 48, C.red, 'center');
     drawText(`Kematian ke-${deathCount}`, GAME_W / 2, GAME_H / 2 + 10, 14, C.textDim, 'center');
+    // Death penalty display
+    if (player.lastLostRupiah > 0) {
+      drawText(`Rupiah hilang: -${player.lastLostRupiah}`, GAME_W / 2, GAME_H / 2 + 32, 14, C.red + 'CC', 'center');
+    }
     ctx.globalAlpha = 1;
   }
   if (gameOverTimer > 90) {

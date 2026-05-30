@@ -11,12 +11,12 @@ import { particles, floatingTexts, updateParticles, clearParticles } from './par
 import { initRenderer } from './renderer.js';
 import { generateLevel } from './level.js';
 import { spawnEntities, createBoss } from './entities.js';
-import { player, updatePlayer, damagePlayer, gainExp, resetPlayer, respawnPlayer, setStateRefs } from './player.js';
+import { player, updatePlayer, damagePlayer, gainExp, resetPlayer, respawnPlayer, setStateRefs, bossDropQueue } from './player.js';
 import { updateEnemies, setEnemyShakeRef } from './enemy.js';
 import { updateBoss } from './boss.js';
 import { initPuzzle, getPuzzleState, resetPuzzle } from './puzzle.js';
 import { startDialog, updateDialog } from './dialog.js';
-import { inventory, getComputedStats, equipItem, unequipSlot, usePotion, allocateStat, updateBuffs, resetInventory } from './inventory.js';
+import { inventory, getComputedStats, equipItem, unequipSlot, usePotion, allocateStat, updateBuffs, resetInventory, addItem } from './inventory.js';
 import { resetShopState, buyItem, sellItem } from './shop.js';
 import {
   drawBackground, drawLevel, drawPlayer, drawEnemies, drawBoss,
@@ -24,7 +24,9 @@ import {
   drawDialog, drawMenu, drawPuzzle, drawBossIntro, drawGameOver, drawVictory,
   drawInventory, drawShop, drawStageSelect, drawLevelUp,
   setGameTime, resetBossIntroTimer, resetGameOverTimer, setCurrentStageId, setInvTab,
+  showSaveIndicator, drawMiniMap,
 } from './draw-game.js';
+import { saveGame, loadGame, hasSaveGame, deleteSaveGame } from './save.js';
 
 // ---- Shared mutable state ----
 const gameState = { value: 'menu' };
@@ -36,6 +38,8 @@ const deathCount = { value: 0 };
 // Wire up state refs for player module
 setStateRefs(gameState, hitStop, shake, parryFlash, deathCount);
 setEnemyShakeRef(shake);
+import { setOnCheckpoint } from './player.js';
+setOnCheckpoint(() => { autoSave(currentStageId); });
 
 // ---- Game-level variables ----
 let gameTime = 0;
@@ -117,7 +121,55 @@ function startGame() {
   resetInventory();
   unlockedStages = [true, false, false, false, false];
   deathCount.value = 0;
+  // Delete old save when starting new game
+  deleteSaveGame();
   gameState.value = 'stageSelect';
+}
+
+function continueGame() {
+  const data = loadGame();
+  if (!data) {
+    // No save found, start new game
+    startGame();
+    return;
+  }
+  // Restore player
+  player.hp = data.player.hp;
+  player.level = data.player.level;
+  player.exp = data.player.exp;
+  player.expNext = data.player.expNext;
+  player.rupiah = data.player.rupiah;
+  player.artifacts = data.player.artifacts;
+  player.keys = data.player.keys;
+  player.currentStageId = data.player.currentStageId;
+  if (data.player.checkpoint) {
+    player.checkpoint = data.player.checkpoint;
+  }
+  // Restore inventory
+  if (data.inventory) {
+    inventory.items = data.inventory.items || [];
+    inventory.equipment = data.inventory.equipment || { weapon: null, armor: null, accessory: null };
+    inventory.activeBuffs = data.inventory.activeBuffs || [];
+    inventory.skillPoints = data.inventory.skillPoints || 0;
+    inventory.allocatedStats = data.inventory.allocatedStats || { hp: 0, stamina: 0, energy: 0, attack: 0, defense: 0, speed: 0 };
+  }
+  // Restore unlocked stages
+  if (data.unlockedStages) {
+    unlockedStages = data.unlockedStages;
+  }
+  // Restore death count
+  if (data.deathCount !== undefined) {
+    deathCount.value = data.deathCount;
+  }
+
+  // Go to stage select
+  gameState.value = 'stageSelect';
+}
+
+// Helper to auto-save
+function autoSave(currentStageId) {
+  saveGame(player, inventory, unlockedStages, deathCount.value, currentStageId);
+  showSaveIndicator();
 }
 
 function doStartDialog(speaker, lines) {
@@ -157,6 +209,7 @@ function gameLoop() {
     case 'menu': {
       const result = drawMenu();
       if (result === 'startGame') startGame();
+      else if (result === 'continueGame') continueGame();
       break;
     }
 
@@ -198,9 +251,19 @@ function gameLoop() {
       drawPlayer(parryFlash.timer);
       drawParticles(particles, floatingTexts);
       drawHUD(boss, bossActive, deathCount.value);
+      drawMiniMap(tileMap, entities, boss, bossActive);
 
       const ps = getPuzzleState();
       if (ps && ps.solved) puzzleSolved = true;
+
+      // Process boss drop queue
+      while (bossDropQueue.length > 0) {
+        const drop = bossDropQueue.shift();
+        entities.push({
+          type: 'item', itemType: drop.type, subType: drop.subType,
+          x: boss.x, y: boss.y, w: 16, h: 16, collected: false, bobOffset: Math.random() * Math.PI * 2,
+        });
+      }
 
       // Toggle inventory with TAB or I
       if (justPressed('Tab') || justPressed('KeyI')) {
@@ -261,6 +324,8 @@ function gameLoop() {
       drawLevel(tileMap);
       const goResult = drawGameOver(deathCount.value);
       if (goResult === 'respawn') {
+        // Auto-save on death (souls-like: progress saved, rupiah lost)
+        autoSave(currentStageId);
         respawnPlayer();
         entities = spawnEntities(currentStageId);
         const bossX = [73, 80, 90, 100, 110][currentStageId] || 73;
@@ -281,6 +346,8 @@ function gameLoop() {
         if (currentStageId < 4) {
           unlockedStages[currentStageId + 1] = true;
         }
+        // Auto-save on victory (boss defeated)
+        autoSave(currentStageId);
         gameState.value = 'stageSelect';
       }
       break;
@@ -304,6 +371,8 @@ function gameLoop() {
       if (invResult) {
         if (invResult.action === 'close') {
           gameState.value = 'playing';
+        } else if (invResult.action === 'save') {
+          autoSave(currentStageId);
         } else if (invResult.action === 'equip') {
           equipItem(invResult.index);
         } else if (invResult.action === 'unequip') {

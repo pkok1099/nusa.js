@@ -18,6 +18,37 @@ const ENEMY_DEFS = {
   raksasa_kecil: { w: 28, h: 32, hp: 50, speed: 1.0, damage: 22, contactDmg: 12, exp: 20, rupiahDrop: 25 },
 };
 
+// Stage-appropriate equipment drop tables
+// Each entry: { weapons: [], armors: [], accessories: [] }
+const STAGE_DROPS = [
+  // Stage 0: Candi Borobudur — basic tier
+  { weapons: ['keris'], armors: ['kain'], accessories: ['cincin_besi'] },
+  // Stage 1: Hutan Borneo — forest tier
+  { weapons: ['pedang'], armors: ['kulit'], accessories: ['kalung_batu'] },
+  // Stage 2: Gunung Bromo — fire tier
+  { weapons: ['tombak'], armors: ['besi'], accessories: ['gelang_emas'] },
+  // Stage 3: Laut Bali — water tier
+  { weapons: ['panah_api'], armors: ['perak'], accessories: ['cincin_naga'] },
+  // Stage 4: Candi Prambanan — endgame
+  { weapons: ['keris_emas', 'trisula'], armors: ['emas', 'naga'], accessories: ['kalung_dewa', 'gelang_angin'] },
+];
+
+// Boss guaranteed drops per stage
+const BOSS_DROPS = [
+  { type: 'equipment', subType: 'weapon_pedang' },     // Stage 0 boss drops pedang
+  { type: 'equipment', subType: 'armor_kulit' },       // Stage 1 boss drops kulit
+  { type: 'equipment', subType: 'accessory_gelang_emas' }, // Stage 2 boss drops gelang_emas
+  { type: 'equipment', subType: 'armor_perak' },       // Stage 3 boss drops perak
+  { type: 'equipment', subType: 'weapon_trisula' },    // Stage 4 boss drops trisula
+];
+
+// Drop rate constants
+const COMMON_DROP_RATE = 0.05;   // 5% for common enemies
+const ELITE_DROP_RATE = 0.15;    // 15% for elite enemies (patung, golem_api, prajurit_jahat, raksasa_kecil)
+const BOSS_DROP_RATE = 1.0;      // 100% for bosses
+
+const ELITE_TYPES = ['patung', 'golem_api', 'prajurit_jahat', 'raksasa_kecil'];
+
 export function createEnemy(x, y, type) {
   const def = ENEMY_DEFS[type] || ENEMY_DEFS.batu_kecil;
   return {
@@ -98,6 +129,33 @@ export function createBoss(x, y, stageId) {
     summonCount: 0,
     projectileAngle: 0,
   };
+}
+
+// Get a random equipment drop for a given stage
+function getRandomEquipmentDrop(stageId) {
+  const drops = STAGE_DROPS[stageId] || STAGE_DROPS[0];
+  const roll = Math.random();
+  if (roll < 0.5) {
+    // Weapon
+    const weapons = drops.weapons;
+    const pick = weapons[Math.floor(Math.random() * weapons.length)];
+    return { type: 'equipment', subType: `weapon_${pick}` };
+  } else if (roll < 0.85) {
+    // Armor
+    const armors = drops.armors;
+    const pick = armors[Math.floor(Math.random() * armors.length)];
+    return { type: 'equipment', subType: `armor_${pick}` };
+  } else {
+    // Accessory
+    const accessories = drops.accessories;
+    const pick = accessories[Math.floor(Math.random() * accessories.length)];
+    return { type: 'equipment', subType: `accessory_${pick}` };
+  }
+}
+
+// Create an equipment item entity from a drop spec
+function createEquipmentDrop(x, y, subType) {
+  return createItem(x, y, 'equipment', subType);
 }
 
 // Spawn entities per stage
@@ -255,3 +313,18 @@ export function spawnEntities(stageId) {
 
   return entities;
 }
+
+// Export drop utility functions for use in player.js (enemy/boss kill drops)
+export function getEquipmentDropRate(enemyType) {
+  if (ELITE_TYPES.includes(enemyType)) return ELITE_DROP_RATE;
+  return COMMON_DROP_RATE;
+}
+
+export function getRandomEquipmentDropForStage(stageId) {
+  return getRandomEquipmentDrop(stageId);
+}
+
+export function getBossDrop(stageId) {
+  return BOSS_DROPS[stageId] || BOSS_DROPS[0];
+}
+

@@ -15,14 +15,23 @@ import {
   STAMINA_HEAVY_COST, STAMINA_PARRY_COST,
   HEAL_ANIMATION_DURATION, HEAL_TICKS, HEAL_AMOUNT,
   HIT_STOP_FRAMES, SKILL_DAMAGE, INV_FRAMES, GROUND_Y, C,
-  SKILL_POINTS_PER_LEVEL,
+  SKILL_POINTS_PER_LEVEL, ARROW_SPEED, ARROW_DAMAGE, ARROW_RANGE, ARROW_COST,
 } from './config.js';
 import { playSound } from './audio.js';
 import { justPressed } from './input.js';
 import { tileCollision, getTileType } from './physics.js';
-import { spawnParticle, spawnFloatingText } from './particles.js';
+import { spawnParticle, spawnFloatingText, particles } from './particles.js';
 import { inventory, getComputedStats, useHealthPotion, updateBuffs, countHealthPotions, addItem } from './inventory.js';
 import { WEAPONS, ARMORS, ACCESSORIES, POTIONS } from './config.js';
+import { getEquipmentDropRate, getRandomEquipmentDropForStage, getBossDrop } from './entities.js';
+
+// Helper to get raw weapon id string (no object creation)
+function getEquippedWeaponRaw() {
+  return inventory.equipment.weapon || 'keris';
+}
+
+// Boss drop queue (consumed by game.js)
+export const bossDropQueue = [];
 
 export const player = {
   x: 80, y: GROUND_Y - 36, w: 24, h: 36,
@@ -54,6 +63,8 @@ export const player = {
   lavaDamageTimer: 0,
   // Current stage
   currentStageId: 0,
+  // Last death penalty
+  lastLostRupiah: 0,
 };
 
 // Shared mutable state references (set from game.js)
@@ -62,10 +73,15 @@ let hitStopRef = { value: 0 };
 let shakeRef = { timer: 0, intensity: 0 };
 let parryFlashRef = { timer: 0 };
 let deathCountRef = { value: 0 };
+let onCheckpointCallback = null;
 
 export function setStateRefs(gs, hs, sh, pf, dc) {
   gameStateRef = gs; hitStopRef = hs; shakeRef = sh;
   parryFlashRef = pf; deathCountRef = dc;
+}
+
+export function setOnCheckpoint(cb) {
+  onCheckpointCallback = cb;
 }
 
 // Get computed effective stats from inventory
@@ -233,7 +249,43 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
 
   // ==== LIGHT ATTACK (SPACE) ====
   if (justPressed('Space') && !player.dodging && !player.heavyAttacking && !player.healing && player.parryTimer <= 0) {
-    if (player.stamina >= STAMINA_LIGHT_COST) {
+    const weapon = getEquippedWeaponRaw();
+    // Bow attack: SPACE + holding ArrowDown
+    if (weapon === 'panah_api' && keys['ArrowDown']) {
+      // Fire arrow projectile
+      if (player.energy >= ARROW_COST) {
+        player.energy -= ARROW_COST;
+        player.attacking = true;
+        player.attackTimer = 8;
+        player.attackHit = false;
+        player.comboWindow = 0;
+        player.attackCombo = 0;
+        playSound('attack');
+        const stats = getStats();
+        const arrowDmg = ARROW_DAMAGE + stats.attack;
+        // Spawn arrow as a particle projectile
+        const startX = player.x + player.w / 2 + player.facing * 12;
+        const startY = player.y + player.h / 2 - 4;
+        spawnParticle(startX, startY, C.gold + 'CC', 1, 0, Math.floor(ARROW_RANGE / ARROW_SPEED));
+        const p = particles[particles.length - 1];
+        p.vx = player.facing * ARROW_SPEED;
+        p.vy = 0;
+        p.size = 6;
+        p.isProjectile = true;
+        p.isPlayerArrow = true;
+        p.damage = arrowDmg;
+        p.facing = player.facing;
+        spawnParticle(startX, startY - 2, C.orange + '80', 1, 0, Math.floor(ARROW_RANGE / ARROW_SPEED));
+        const trail = particles[particles.length - 1];
+        trail.vx = player.facing * ARROW_SPEED * 0.9;
+        trail.vy = 0;
+        trail.size = 3;
+        trail.isProjectile = true;
+        trail.isPlayerArrow = true;
+        trail.damage = 0; // trail does no damage, just visual
+        trail.facing = player.facing;
+      } else { playSound('noStamina'); }
+    } else if (player.stamina >= STAMINA_LIGHT_COST) {
       player.stamina -= STAMINA_LIGHT_COST;
       player.attacking = true;
       player.attackHit = false;
@@ -429,6 +481,8 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
       spawnFloatingText(player.x, player.y - 30, 'Checkpoint!', C.gold);
       spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.gold, 15, 3, 40);
       playSound('checkpoint');
+      // Auto-save on checkpoint
+      if (onCheckpointCallback) onCheckpointCallback();
     }
   }
 
@@ -516,6 +570,15 @@ export function damagePlayer(amount) {
 }
 
 export function playerDie() {
+  // Death penalty: lose 30% of current Rupiah (souls-like)
+  const lostRupiah = Math.floor(player.rupiah * 0.3);
+  player.rupiah = Math.max(0, player.rupiah - lostRupiah);
+  if (lostRupiah > 0) {
+    spawnFloatingText(player.x + player.w / 2, player.y - 30, `-${lostRupiah} Rupiah`, C.red);
+  }
+  // Store last lost rupiah for death screen display
+  player.lastLostRupiah = lostRupiah;
+
   gameStateRef.value = 'gameOver';
   deathCountRef.value++;
   spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.red, 30, 5, 60);
@@ -545,6 +608,15 @@ export function damageEnemy(e, amount, entities) {
       const dropType = potionTypes[Math.floor(Math.random() * potionTypes.length)];
       entities.push({
         type: 'item', itemType: 'potion', subType: dropType,
+        x: e.x, y: e.y, w: 16, h: 16, collected: false, bobOffset: Math.random() * Math.PI * 2,
+      });
+    }
+    // Stage-appropriate equipment drop
+    const dropRate = getEquipmentDropRate(e.enemyType);
+    if (Math.random() < dropRate) {
+      const drop = getRandomEquipmentDropForStage(player.currentStageId || 0);
+      entities.push({
+        type: 'item', itemType: drop.type, subType: drop.subType,
         x: e.x, y: e.y, w: 16, h: 16, collected: false, bobOffset: Math.random() * Math.PI * 2,
       });
     }
@@ -581,6 +653,13 @@ export function damageBoss(boss, amount) {
     player.artifacts++;
     const bossRupiah = [50, 80, 120, 160, 250][boss.stageId || 0] || 50;
     player.rupiah += bossRupiah;
+    // Boss guaranteed equipment drop
+    const bossDrop = getBossDrop(boss.stageId || 0);
+    if (bossDrop) {
+      // We need entities reference - push via a callback or use global state
+      // Since damageBoss doesn't have entities, we'll add it to a drop queue
+      bossDropQueue.push(bossDrop);
+    }
     setTimeout(() => { gameStateRef.value = 'victory'; }, 1500);
   }
 }
@@ -628,6 +707,7 @@ export function resetPlayer() {
     checkpoint: { x: 80, y: startY },
     poisonTimer: 0, stunTimer: 0, slowTimer: 0, lavaDamageTimer: 0,
     currentStageId: 0,
+    lastLostRupiah: 0,
   });
 }
 
