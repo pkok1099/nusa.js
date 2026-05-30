@@ -9,7 +9,6 @@ import { player } from './player.js';
 import { spawnParticle } from './particles.js';
 import { justPressed, mouse } from './input.js';
 import { playSound } from './audio.js';
-import { puzzleState } from './puzzle.js';
 import { getCurrentDialog } from './dialog.js';
 import { inventory, getComputedStats, getEquippedWeapon, getEquippedArmor, getEquippedAccessory, countHealthPotions, getPotionCounts } from './inventory.js';
 import { shopItems, shopState, TAB_NAMES, buyItem, sellItem, getCurrentTabItems, resetShopState } from './shop.js';

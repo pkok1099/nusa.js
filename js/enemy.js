@@ -2,7 +2,7 @@
 // enemy.js — Enemy update logic (telegraph, stagger, patrol, special abilities)
 // ============================================================
 
-import { GRAVITY, MAX_FALL, HIT_STOP_FRAMES, C } from './config.js';
+import { GRAVITY, MAX_FALL, C } from './config.js';
 import { playSound } from './audio.js';
 import { tileCollision } from './physics.js';
 import { spawnParticle, spawnFloatingText, particles as particlesList } from './particles.js';

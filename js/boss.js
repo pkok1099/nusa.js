@@ -512,14 +512,16 @@ export function executeBossAttack(boss, player) {
       // after pulling player to avoid pushing them through walls
       if (!player.dodging) {
         const pullStrength = 3;
-        if (player.x < boss.x) player.x += pullStrength;
-        else player.x -= pullStrength;
+        const pullDir = player.x < boss.x ? 1 : -1; // +1 = pulled right, -1 = pulled left
+        player.x += pullStrength * pullDir;
         // Wall collision check for pulled player
         const pullCols = tileCollision(player.x, player.y, player.w, player.h, player.prevY);
         pullCols.forEach(c => {
           if (c.oneway) return;
-          if (player.x < boss.x) player.x = c.x + c.w;
-          else player.x = c.x - player.w;
+          // BUG FIX v0.6.3: Collision resolution must push player BACK
+          // (opposite to pull direction), not through the wall.
+          if (pullDir > 0) player.x = c.x - player.w;   // pulled right → push left
+          else player.x = c.x + c.w;                     // pulled left → push right
         });
       }
       if (dist < 60 && player.invincible <= 0)
