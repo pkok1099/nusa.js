@@ -1,5 +1,5 @@
 // ============================================================
-// input.js — Keyboard, mouse, and touch input handling
+// input.js — Keyboard and mouse input handling (desktop only)
 // ============================================================
 
 export const keys = {};
@@ -40,17 +40,5 @@ export function setupInput(canvas) {
   canvas.addEventListener('click', () => {
     mouse.clicked = true;
     initAudio();
-  });
-
-  canvas.addEventListener('touchstart', e => {
-    e.preventDefault();
-    const t = e.touches[0];
-    const r = canvas.getBoundingClientRect();
-    mouse.x = (t.clientX - r.left) * (GAME_W / r.width);
-    mouse.y = (t.clientY - r.top) * (GAME_H / r.height);
-    mouse.clicked = true;
-    initAudio();
-    keys['Space'] = true;
-    setTimeout(() => { keys['Space'] = false; }, 100);
   });
 }
