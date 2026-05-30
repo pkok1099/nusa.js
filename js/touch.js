@@ -25,6 +25,7 @@ const CONTROLS = {
   parry:  { x: 88, y: 52, w: 11, h: 11, key: 'KeyR',       label: '🛡' },
   skill:  { x: 68, y: 76, w: 11, h: 11, key: 'KeyQ',       label: '⚡' },
   interact:{ x: 4, y: 50, w: 10, h: 10, key: 'KeyE',       label: 'E' },
+  weaponArt:{ x: 88, y: 40, w: 11, h: 11, key: 'KeyG',     label: '⚔' },
 };
 
 let touchControlsEnabled = false;
@@ -53,7 +54,7 @@ function createTouchOverlay() {
     btn.dataset.control = name;
     btn.textContent = ctrl.label;
     // Smaller buttons for heavy/parry/skill to fit on screen
-    const isSmallBtn = ['heavy', 'parry', 'skill', 'interact'].includes(name);
+    const isSmallBtn = ['heavy', 'parry', 'skill', 'interact', 'weaponArt'].includes(name);
     const fontSize = isSmallBtn ? '18px' : '24px';
     btn.style.cssText = `
       position: absolute;

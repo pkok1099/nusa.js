@@ -751,14 +751,32 @@ export function drawHUD(boss, bossActive, deathCount) {
   const potionCounts = getPotionCounts();
   const healthPotions = potionCounts.health || 0;
 
-  drawRect(8, 8, 290, 42, '#00000080', 6);
+  drawRect(8, 8, 290, 52, '#00000080', 6);
   drawText('HP', 14, 22, 11, C.textDim, 'left');
   drawBar(30, 14, 120, 14, player.hp / stats.maxHp, '#440000', C.red, 3);
+  // Souls-like v0.7.1: Rally HP overlay on health bar (yellow portion)
+  if (player.rallyHp > 0 && player.rallyTimer > 0) {
+    const rallyPct = Math.min(player.rallyHp / stats.maxHp, 1);
+    const hpPct = player.hp / stats.maxHp;
+    const rallyStart = hpPct;
+    const rallyEnd = Math.min(hpPct + rallyPct, 1);
+    drawBar(30, 14, 120, 14, rallyEnd, '#440000', '#D4AF3766', 3); // yellow overlay
+    // Rally timer indicator
+    const rallyAlpha = Math.floor((player.rallyTimer / 300) * 180).toString(16).padStart(2, '0');
+    drawText(`Rally: ${Math.ceil(player.rallyHp)}`, 90, 22, 7, C.goldLight + rallyAlpha, 'center');
+  }
   drawText(`${Math.ceil(player.hp)}/${stats.maxHp}`, 90, 22, 9, '#fff', 'center');
   drawText('ST', 14, 38, 9, C.textDim, 'left');
   const staminaColor = player.stamina < 20 ? C.red : C.stamina;
   drawBar(30, 30, 120, 10, player.stamina / stats.maxStamina, C.staminaDark, staminaColor, 2);
   drawText(`${Math.ceil(player.stamina)}`, 90, 36, 8, player.stamina < 20 ? C.red : '#fff', 'center');
+  // Souls-like v0.7.1: Poise bar below stamina
+  drawText('PS', 14, 50, 7, C.textDim, 'left');
+  drawBar(30, 43, 120, 6, player.poise / player.maxPoise, '#332200', '#D4AF37', 1);
+  // Souls-like v0.7.1: Exhaustion indicator
+  if (player.exhausted) {
+    drawText('LELAH!', 160, 50, 9, C.red, 'left');
+  }
   drawText('EN', 158, 30, 11, C.textDim, 'left');
   drawBar(174, 22, 70, 14, player.energy / stats.maxEnergy, '#003344', C.cyan, 3);
   if (player.attacking || player.comboWindow > 0) {
@@ -794,6 +812,13 @@ export function drawHUD(boss, bossActive, deathCount) {
     drawBar(GAME_W / 2 - 36, GAME_H - 32, 72, 20, 1 - player.skillCooldown / player.skillMaxCooldown, '#333', C.gold + '40', 4);
     drawText(`${Math.ceil(player.skillCooldown / 60)}s`, GAME_W / 2, GAME_H - 22, 10, C.textDim, 'center');
   } else { drawText('[Q] Skill', GAME_W / 2, GAME_H - 22, 10, C.gold, 'center'); }
+
+  // Souls-like v0.7.1: Weapon Art cooldown display
+  drawRect(GAME_W / 2 + 48, GAME_H - 36, 80, 28, '#00000080', 6);
+  if (player.weaponArtCooldown > 0) {
+    drawBar(GAME_W / 2 + 52, GAME_H - 32, 72, 20, 1 - player.weaponArtCooldown / 180, '#332200', C.parryGold + '40', 4);
+    drawText(`${Math.ceil(player.weaponArtCooldown / 60)}s`, GAME_W / 2 + 88, GAME_H - 22, 10, C.textDim, 'center');
+  } else { drawText('[G] Seni', GAME_W / 2 + 88, GAME_H - 22, 10, C.parryGold, 'center'); }
 
   // Active buffs display
   let buffX = GAME_W / 2 - 60;

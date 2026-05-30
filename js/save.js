@@ -23,6 +23,10 @@ export function saveGame(player, inventory, unlockedStages, deathCount, currentS
         estusMax: player.estusMax,
         bloodstain: player.bloodstain ? { ...player.bloodstain } : null,
         lostRupiah: player.lostRupiah,
+        // Souls-like v0.7.1: Rally and poise
+        rallyHp: player.rallyHp,
+        rallyTimer: player.rallyTimer,
+        poise: player.poise,
       },
       inventory: {
         items: inventory.items.map(item => ({ ...item })),

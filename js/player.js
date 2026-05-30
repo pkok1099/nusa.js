@@ -25,6 +25,11 @@ import {
   PARRY_ACTIVE_WINDOW, PARRY_RECOVERY, PARRY_STAMINA_REFUND,
   BACKSTAB_DAMAGE_MULT, POSTURE_BREAK_DAMAGE_MULT,
   HIT_STOP_HEAVY, HIT_STOP_PARRY, SCREEN_SHAKE_LIGHT, SCREEN_SHAKE_HEAVY, SCREEN_SHAKE_CRIT,
+  // Souls-like system v0.7.1
+  RALLY_DURATION, RALLY_RECOVERY_PCT,
+  PLAYER_MAX_POISE, PLAYER_POISE_REGEN, PLAYER_POISE_REGEN_COMBAT, PLAYER_STAGGER_DURATION,
+  STAMINA_EXHAUST_DURATION,
+  WEAPON_ART_STAMINA_COST, WEAPON_ART_ENERGY_COST, WEAPON_ART_COOLDOWN, WEAPON_ARTS,
 } from './config.js';
 import { playSound } from './audio.js';
 import { justPressed, keys as inputKeys } from './input.js';
@@ -94,6 +99,21 @@ export const player = {
   // Bonfire healing state
   bonfireHealing: false,
   bonfireHealTimer: 0,
+  // Souls-like v0.7.1: Rally system (Bloodborne-style HP recovery)
+  rallyHp: 0,           // Amount of HP that can be rallied back
+  rallyTimer: 0,        // Frames remaining to rally
+  // Souls-like v0.7.1: Player poise (can be staggered like enemies)
+  poise: PLAYER_MAX_POISE,
+  maxPoise: PLAYER_MAX_POISE,
+  poiseStaggerTimer: 0, // Frames remaining in poise stagger
+  // Souls-like v0.7.1: Stamina exhaustion
+  exhausted: false,
+  exhaustTimer: 0,
+  // Souls-like v0.7.1: Weapon Art
+  weaponArtActive: false,
+  weaponArtTimer: 0,
+  weaponArtCooldown: 0,
+  weaponArtType: null,
 };
 
 // Shared mutable state references (set from game.js)
@@ -166,6 +186,23 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
       if (player.hp <= 0) { player.hp = 0; playerDie(); }
     }
   }
+  // Souls-like v0.7.1: Poise stagger (separate from stun — caused by poise break)
+  if (player.poiseStaggerTimer > 0) {
+    player.poiseStaggerTimer--;
+    player.vx = 0;
+    player.prevY = player.y;
+    applyGravityAndCollision(tileMap);
+    return;
+  }
+  // Souls-like v0.7.1: Stamina exhaustion — can't act briefly when stamina hits 0
+  if (player.exhausted) {
+    player.exhaustTimer--;
+    if (player.exhaustTimer <= 0) player.exhausted = false;
+    player.vx = 0;
+    player.prevY = player.y;
+    applyGravityAndCollision(tileMap);
+    return;
+  }
   if (player.stunTimer > 0) {
     player.stunTimer--;
     player.vx = 0;
@@ -200,6 +237,41 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
   const effectiveMaxHp = stats.maxHp;
   const effectiveMaxStamina = stats.maxStamina;
   const effectiveMaxEnergy = stats.maxEnergy;
+
+  // ---- RALLY SYSTEM v0.7.1 ----
+  // Rally timer counts down — if it expires, lost rally HP is gone
+  if (player.rallyTimer > 0) {
+    player.rallyTimer--;
+    if (player.rallyTimer <= 0) player.rallyHp = 0;
+  }
+
+  // ---- POISE REGEN v0.7.1 ----
+  if (!player.inCombat && player.poise < player.maxPoise) {
+    player.poise = Math.min(player.maxPoise, player.poise + PLAYER_POISE_REGEN);
+  } else if (player.inCombat && player.poise < player.maxPoise) {
+    player.poise = Math.min(player.maxPoise, player.poise + PLAYER_POISE_REGEN_COMBAT);
+  }
+
+  // ---- WEAPON ART COOLDOWN v0.7.1 ----
+  if (player.weaponArtCooldown > 0) player.weaponArtCooldown--;
+
+  // ---- WEAPON ART EXECUTION v0.7.1 ----
+  if (player.weaponArtActive) {
+    player.weaponArtTimer--;
+    const art = WEAPON_ARTS[player.weaponArtType] || WEAPON_ARTS.keris;
+    // Execute weapon art hit at the right frame
+    if (player.weaponArtTimer === Math.floor(art.duration * 0.5)) {
+      executeWeaponArtHit(art, entities, boss, bossActive, stats);
+    }
+    player.vx = player.facing * 2; // Slight forward movement during art
+    if (player.weaponArtTimer <= 0) {
+      player.weaponArtActive = false;
+      player.weaponArtType = null;
+    }
+    player.prevY = player.y;
+    applyGravityAndCollision(tileMap);
+    return;
+  }
 
   // Clamp current values to max
   player.hp = Math.min(player.hp, effectiveMaxHp);
@@ -410,7 +482,14 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
         player.attackHit = true;
       }
       player.attackCombo = (player.attackCombo + 1) % 3;
-    } else { playSound('noStamina'); }
+    } else { playSound('noStamina');
+      // Souls-like v0.7.1: Stamina exhaustion — if stamina hits 0, brief stagger
+      if (player.stamina <= 0 && !player.exhausted) {
+        player.exhausted = true;
+        player.exhaustTimer = STAMINA_EXHAUST_DURATION;
+        spawnFloatingText(player.x + player.w / 2, player.y - 30, 'LELAH!', C.staminaDark);
+      }
+    }
   }
 
   // ==== HEAVY ATTACK (F) ====
@@ -424,7 +503,14 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
       player.comboWindow = 0;
       player.attackCombo = 0;
       playSound('heavyAttack');
-    } else { playSound('noStamina'); }
+    } else { playSound('noStamina');
+      // Souls-like v0.7.1: Stamina exhaustion on heavy attack
+      if (player.stamina < STAMINA_HEAVY_COST && !player.exhausted) {
+        player.exhausted = true;
+        player.exhaustTimer = STAMINA_EXHAUST_DURATION;
+        spawnFloatingText(player.x + player.w / 2, player.y - 30, 'LELAH!', C.staminaDark);
+      }
+    }
   }
 
   // ==== PARRY (R) ====
@@ -449,7 +535,33 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
       player.dodgeTimer = DODGE_DURATION;
       player.dodgeDir = player.facing;
       playSound('dodge');
-    } else if (!player.dodging) { playSound('noStamina'); }
+    } else if (!player.dodging) { playSound('noStamina');
+      // Souls-like v0.7.1: Stamina exhaustion on dodge
+      if (player.stamina < STAMINA_DODGE_COST && !player.exhausted) {
+        player.exhausted = true;
+        player.exhaustTimer = STAMINA_EXHAUST_DURATION;
+        spawnFloatingText(player.x + player.w / 2, player.y - 30, 'LELAH!', C.staminaDark);
+      }
+    }
+  }
+
+  // ==== WEAPON ART (G) v0.7.1 ====
+  if (justPressed('KeyG') && !player.dodging && !player.attacking && !player.heavyAttacking && !player.healing && !player.weaponArtActive && player.parryTimer <= 0 && player.weaponArtCooldown <= 0) {
+    if (player.stamina >= WEAPON_ART_STAMINA_COST && player.energy >= WEAPON_ART_ENERGY_COST) {
+      player.stamina -= WEAPON_ART_STAMINA_COST;
+      player.energy -= WEAPON_ART_ENERGY_COST;
+      player.weaponArtActive = true;
+      const weapon = getEquippedWeaponRaw();
+      const art = WEAPON_ARTS[weapon] || WEAPON_ARTS.keris;
+      player.weaponArtType = weapon;
+      player.weaponArtTimer = art.duration;
+      player.weaponArtCooldown = WEAPON_ART_COOLDOWN;
+      player.attacking = false; player.heavyAttacking = false;
+      player.comboWindow = 0; player.parryTimer = 0; player.attackCombo = 0;
+      playSound('skill');
+      spawnFloatingText(player.x + player.w / 2, player.y - 40, art.name + '!', C.parryGold);
+      spawnParticle(player.x + player.w / 2 + player.facing * 20, player.y + player.h / 2, C.gold, 15, 5, 30);
+    } else { playSound('noStamina'); }
   }
 
   // ==== SKILL (Q) ====
@@ -626,7 +738,10 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
 
   // State
   if (player.healing) player.state = 'heal';
+  else if (player.weaponArtActive) player.state = 'heavyAttack';
   else if (player.dodging) player.state = 'dodge';
+  else if (player.poiseStaggerTimer > 0) player.state = 'hurt';
+  else if (player.exhausted) player.state = 'hurt';
   else if (player.heavyAttacking) player.state = 'heavyAttack';
   else if (player.attacking) player.state = 'attack';
   else if (player.parryTimer > 0) player.state = 'parry';
@@ -686,6 +801,91 @@ function rectsOverlapAtk(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
+// ---- WEAPON ART HIT EXECUTION v0.7.1 ----
+function executeWeaponArtHit(art, entities, boss, bossActive, stats) {
+  const baseDmg = (stats.attack + player.level * 3) * art.damageMult;
+  const atkBox = {
+    x: player.facing > 0 ? player.x + player.w : player.x - art.range,
+    y: player.y - 15, w: art.range, h: player.h + 30,
+  };
+
+  playSound('heavyAttack');
+
+  let hitCount = 0;
+  // Enemy hits
+  entities.forEach(e => {
+    if (e.type === 'enemy' && e.alive && rectsOverlapAtk(atkBox, e)) {
+      let dmg = e.staggered ? Math.floor(baseDmg * POSTURE_BREAK_DAMAGE_MULT) : Math.floor(baseDmg);
+      damageEnemy(e, dmg, entities);
+      hitCount++;
+    }
+  });
+  // Boss hit
+  if (bossActive && boss && boss.alive && rectsOverlapAtk(atkBox, boss)) {
+    damageBoss(boss, Math.floor(baseDmg));
+    hitCount++;
+  }
+
+  // Visual effects based on weapon art type
+  const cx = player.x + player.w / 2 + player.facing * 30;
+  const cy = player.y + player.h / 2;
+  switch (art.type) {
+    case 'thrust':
+      spawnParticle(cx, cy, C.gold, 20, 8, 25);
+      shakeRef.timer = 6; shakeRef.intensity = SCREEN_SHAKE_HEAVY;
+      hitStopRef.value = HIT_STOP_HEAVY;
+      break;
+    case 'spin':
+      for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2;
+        spawnParticle(cx + Math.cos(angle) * 20, cy + Math.sin(angle) * 20, C.gold, 5, 3, 20);
+      }
+      shakeRef.timer = 8; shakeRef.intensity = SCREEN_SHAKE_HEAVY;
+      hitStopRef.value = HIT_STOP_HEAVY;
+      break;
+    case 'sweep':
+      for (let i = 0; i < 12; i++) {
+        spawnParticle(cx + player.facing * i * 8, cy - 10 + Math.sin(i * 0.5) * 15, C.goldLight, 5, 3, 25);
+      }
+      shakeRef.timer = 6; shakeRef.intensity = SCREEN_SHAKE_HEAVY;
+      hitStopRef.value = HIT_STOP_HEAVY;
+      break;
+    case 'beam':
+      for (let i = 0; i < 15; i++) {
+        spawnParticle(cx + player.facing * i * 12, cy, C.goldLight, 4, 2, 30);
+      }
+      shakeRef.timer = 10; shakeRef.intensity = SCREEN_SHAKE_CRIT;
+      hitStopRef.value = HIT_STOP_PARRY;
+      break;
+    case 'rain':
+      for (let i = 0; i < 8; i++) {
+        const rx = player.x + (Math.random() - 0.5) * art.range;
+        particles.push({
+          x: rx, y: player.y - 200, vx: 0, vy: 6,
+          life: 40, maxLife: 40, color: C.orange, size: 5,
+          isProjectile: true, damage: Math.floor(baseDmg / 8),
+        });
+      }
+      shakeRef.timer = 8; shakeRef.intensity = SCREEN_SHAKE_HEAVY;
+      break;
+    case 'divine':
+      spawnParticle(cx, cy, C.goldLight, 30, 8, 50);
+      spawnParticle(cx, cy - 30, C.parryGold, 20, 6, 40);
+      shakeRef.timer = 12; shakeRef.intensity = SCREEN_SHAKE_CRIT;
+      hitStopRef.value = HIT_STOP_PARRY;
+      break;
+  }
+
+  // Rally recovery from weapon art hits
+  if (hitCount > 0 && player.rallyHp > 0) {
+    const rallyRecovery = Math.floor(player.rallyHp * RALLY_RECOVERY_PCT);
+    player.hp = Math.min(player.hp + rallyRecovery, getStats().maxHp);
+    player.rallyHp = 0;
+    player.rallyTimer = 0;
+    spawnFloatingText(player.x, player.y - 50, `+${rallyRecovery} HP (Rally!)`, C.goldLight);
+  }
+}
+
 export function damagePlayer(amount) {
   if (player.invincible > 0 || player.dodging) return;
   // Souls-like v0.7.0: Check parry active window
@@ -710,11 +910,26 @@ export function damagePlayer(amount) {
   const defense = stats.defense || 0;
   const reducedDamage = Math.max(1, amount - defense);
 
+  // Souls-like v0.7.1: Rally system — store recently lost HP for recovery
+  player.rallyHp += reducedDamage;
+  player.rallyTimer = RALLY_DURATION;
+
   player.hp -= reducedDamage;
   player.invincible = INV_FRAMES;
   player.hurtTimer = 15;
   // Souls-like v0.7.0: Taking damage triggers combat state
   player.combatTimer = 180; // 3 seconds in combat after taking damage
+
+  // Souls-like v0.7.1: Poise damage — reduce poise, stagger on break
+  player.poise -= reducedDamage * 0.5;
+  if (player.poise <= 0 && player.poiseStaggerTimer <= 0) {
+    player.poise = 0;
+    player.poiseStaggerTimer = PLAYER_STAGGER_DURATION;
+    spawnFloatingText(player.x, player.y - 40, 'POISE BREAK!', C.red);
+    shakeRef.timer = 10; shakeRef.intensity = SCREEN_SHAKE_CRIT;
+    hitStopRef.value = HIT_STOP_PARRY;
+  }
+
   playSound('damage');
   spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.red, 12, 4);
   spawnFloatingText(player.x + player.w / 2, player.y - 30, `-${reducedDamage}`, C.red);
@@ -767,6 +982,21 @@ export function damageEnemy(e, amount, entities) {
   spawnFloatingText(e.x + e.w / 2, e.y - 10, `-${amount}`, C.goldLight);
   shakeRef.timer = 3; shakeRef.intensity = SCREEN_SHAKE_LIGHT;
   hitStopRef.value = HIT_STOP_FRAMES;
+
+  // Souls-like v0.7.1: Rally recovery — recover recently lost HP by attacking
+  if (player.rallyHp > 0 && player.rallyTimer > 0) {
+    const rallyRecovery = Math.floor(amount * RALLY_RECOVERY_PCT);
+    if (rallyRecovery > 0) {
+      player.hp = Math.min(player.hp + rallyRecovery, getStats().maxHp);
+      player.rallyHp = Math.max(0, player.rallyHp - rallyRecovery);
+      spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.goldLight, 5, 2, 15);
+      if (player.rallyHp <= 0) {
+        player.rallyHp = 0;
+        player.rallyTimer = 0;
+      }
+    }
+  }
+
   if (e.hp <= 0) {
     e.alive = false;
     spawnParticle(e.x + e.w / 2, e.y + e.h / 2, C.stone, 15, 4, 40);
@@ -900,6 +1130,11 @@ export function resetPlayer() {
     staminaRegenDelay: 0, dodgeIFrame: 0,
     inCombat: false, combatTimer: 0,
     bonfireHealing: false, bonfireHealTimer: 0,
+    // Souls-like v0.7.1 fields
+    rallyHp: 0, rallyTimer: 0,
+    poise: PLAYER_MAX_POISE, maxPoise: PLAYER_MAX_POISE, poiseStaggerTimer: 0,
+    exhausted: false, exhaustTimer: 0,
+    weaponArtActive: false, weaponArtTimer: 0, weaponArtCooldown: 0, weaponArtType: null,
   });
 }
 
@@ -928,6 +1163,12 @@ export function respawnPlayer() {
   player.inCombat = false;
   player.bonfireHealing = false;
   player.bonfireHealTimer = 0;
+  // Souls-like v0.7.1: Reset rally, poise, exhaustion, weapon art
+  player.rallyHp = 0; player.rallyTimer = 0;
+  player.poise = player.maxPoise; player.poiseStaggerTimer = 0;
+  player.exhausted = false; player.exhaustTimer = 0;
+  player.weaponArtActive = false; player.weaponArtTimer = 0;
+  player.weaponArtCooldown = 0; player.weaponArtType = null;
   // Estus is NOT refilled on respawn (only at bonfires)
   gameStateRef.value = 'playing';
 }

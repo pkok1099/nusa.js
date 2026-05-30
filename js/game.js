@@ -173,6 +173,10 @@ function continueGame() {
   player.estusMax = data.player.estusMax !== undefined ? data.player.estusMax : 5;
   player.bloodstain = data.player.bloodstain || null;
   player.lostRupiah = data.player.lostRupiah || 0;
+  // Souls-like v0.7.1: Restore rally and poise
+  player.rallyHp = data.player.rallyHp || 0;
+  player.rallyTimer = data.player.rallyTimer || 0;
+  player.poise = data.player.poise !== undefined ? data.player.poise : player.maxPoise;
   // Restore inventory
   if (data.inventory) {
     inventory.items = data.inventory.items || [];

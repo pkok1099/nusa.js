@@ -235,3 +235,32 @@ export const HIT_STOP_PARRY = 12;   // Hit stop frames for parry
 export const SCREEN_SHAKE_LIGHT = 2;
 export const SCREEN_SHAKE_HEAVY = 5;
 export const SCREEN_SHAKE_CRIT = 8;
+
+// ---- SOULS-LIKE SYSTEM v0.7.1 ----
+// Rally system (Bloodborne-style: recover recently lost HP by attacking)
+export const RALLY_DURATION = 300;     // 5 seconds to rally back HP
+export const RALLY_RECOVERY_PCT = 0.6; // Recover 60% of recent damage dealt back as HP
+
+// Player poise (like enemy stagger — player can be staggered too)
+export const PLAYER_MAX_POISE = 50;
+export const PLAYER_POISE_REGEN = 0.3;  // Poise regen per frame when not in combat
+export const PLAYER_POISE_REGEN_COMBAT = 0.05; // Slower regen in combat
+export const PLAYER_STAGGER_DURATION = 30; // Frames player is staggered when poise breaks
+
+// Stamina exhaustion penalty
+export const STAMINA_EXHAUST_DURATION = 20; // Can't act for 20 frames when stamina hits 0
+
+// Weapon Arts (unique skill per weapon, costs stamina + energy)
+export const WEAPON_ART_STAMINA_COST = 30;
+export const WEAPON_ART_ENERGY_COST = 20;
+export const WEAPON_ART_COOLDOWN = 180; // 3 second cooldown between weapon arts
+
+// Weapon Art definitions: { name, type, damage_mult, range, duration, desc }
+export const WEAPON_ARTS = {
+  keris:      { name: 'Tusukan Maut', type: 'thrust', damageMult: 2.5, range: 70, duration: 18, desc: 'Tusukan cepat dengan keris' },
+  pedang:     { name: 'Putaran Baja', type: 'spin', damageMult: 2.0, range: 90, duration: 22, desc: 'Putaran penuh dengan pedang' },
+  tombak:     { name: 'Sapuan Naga', type: 'sweep', damageMult: 2.2, range: 100, duration: 20, desc: 'Sapuan lebar dengan tombak' },
+  keris_emas: { name: 'Sinar Pusaka', type: 'beam', damageMult: 3.0, range: 200, duration: 25, desc: 'Sinar emas dari keris pusaka' },
+  panah_api:  { name: 'Hujan Api', type: 'rain', damageMult: 1.8, range: 150, duration: 30, desc: 'Hujan panah api dari langit' },
+  trisula:    { name: 'Trisula Dewa', type: 'divine', damageMult: 3.5, range: 120, duration: 28, desc: 'Serangan ilahi trisula dewa' },
+};
