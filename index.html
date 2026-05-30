@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>NUSANTARA: Warisan Terakhir</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -21,7 +24,7 @@ canvas{display:block;margin:auto;image-rendering:pixelated}
 <body>
 <div id="gameContainer">
 <canvas id="gameCanvas"></canvas>
-<div id="loading">MEMUAT NUSANTARA...<div class="sub">Harap tunggu sebentar</div></div>
+<div id="loading">MEMUAT NUSANTARA...<div class="sub">Harap tunggu sebentar</div><div class="sub" id="loadProgress" style="margin-top:4px;color:#D4AF3755"></div></div>
 <div id="loadError">
   <div class="title">Gagal Memuat Game</div>
   <div>Pastikan file dijalankan via HTTP server dari folder <code>game/</code> (bukan file://).</div>
@@ -39,13 +42,26 @@ canvas{display:block;margin:auto;image-rendering:pixelated}
 </div>
 </div>
 
+<!-- Cache-bust: append version to prevent stale cached modules -->
+<script>
+  // Inject version into all module URLs to bust browser cache
+  window.__nusaVersion = '0.7.0';
+  var _origFetch = window.fetch;
+  window.fetch = function(url, opts) {
+    if (typeof url === 'string' && url.indexOf('/js/') >= 0 && url.indexOf('?v=') < 0 && url.indexOf('t=') < 0) {
+      url = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'v=' + window.__nusaVersion;
+    }
+    return _origFetch.call(this, url, opts);
+  };
+</script>
+
 <!-- ES Module Entry Point — browser native, no build tool needed -->
-<script type="module" src="js/game.js"></script>
+<script type="module" src="js/game.js?v=0.7.0"></script>
 
 <!-- Touch controls module — initializes on mobile devices -->
 <script type="module">
   try {
-    const { initTouchControls } = await import('./js/touch.js');
+    const { initTouchControls } = await import('./js/touch.js?v=0.7.0');
     initTouchControls();
   } catch(e) {
     console.warn('Touch controls gagal dimuat:', e.message);
@@ -66,43 +82,55 @@ canvas{display:block;margin:auto;image-rendering:pixelated}
     return;
   }
 
-  // Only listen for SCRIPT TAG load failures (not runtime errors inside modules)
+  // Listen for script tag load failures (network/CORS issues)
   window.addEventListener('error', function(e) {
-    // Only handle script element load failures (network/CORS issues)
     if (e.target && e.target.tagName === 'SCRIPT') {
       var src = e.target.src || '(inline)';
+      // Strip cache-bust param for cleaner error message
+      src = src.replace(/[?&]v=[^&]*/, '');
       moduleError = 'Script gagal dimuat: ' + src;
       console.error('[NUSANTARA] Script load error:', src);
-      showError();
+      // Delay showError to let unhandledrejection capture more specific error
+      setTimeout(showError, 200);
     }
-    // Do NOT show error screen for runtime JS errors inside modules.
-    // Runtime errors (e.g. undefined variable) should be visible in Console (F12)
-    // but should NOT replace the game screen, because the game may still
-    // be partially functional. The game.js module itself will handle
-    // its own error boundaries.
   }, true);
 
-  // Catch unhandled promise rejections ONLY for module import failures
+  // Catch unhandled promise rejections for module import failures
   window.addEventListener('unhandledrejection', function(e) {
     var reason = e.reason;
     var msg = reason ? (reason.message || String(reason)) : 'Unknown';
-    // Only treat as fatal if it's clearly a module loading error
-    if (msg.indexOf('import') >= 0 || msg.indexOf('module') >= 0 ||
-        msg.indexOf('Failed to fetch') >= 0 || msg.indexOf('CORS') >= 0 ||
-        (reason && reason instanceof TypeError && msg.indexOf('resolve') >= 0)) {
+    // Detect all module-related errors including:
+    // - "Failed to fetch" (network error)
+    // - "import" or "module" (import failures)
+    // - "does not provide an export named 'X'" (missing named export - cache issue!)
+    // - "CORS" (cross-origin issues)
+    var isModuleError = msg.indexOf('import') >= 0 ||
+        msg.indexOf('module') >= 0 ||
+        msg.indexOf('Failed to fetch') >= 0 ||
+        msg.indexOf('CORS') >= 0 ||
+        msg.indexOf('does not provide an export') >= 0 ||
+        msg.indexOf('provide an export') >= 0 ||
+        msg.indexOf('not found') >= 0 ||
+        (reason && reason instanceof TypeError && msg.indexOf('resolve') >= 0);
+    if (isModuleError) {
       moduleError = 'Module import gagal: ' + msg;
       console.error('[NUSANTARA] Module import error:', msg);
       showError();
     }
-    // Other unhandled rejections are not fatal — just log them
     console.warn('[NUSANTARA] Unhandled promise:', msg);
   });
 
   function showError() {
     if (moduleLoaded) return;
+    // Don't overwrite already-displayed error
+    if (document.getElementById('loadError').style.display === 'block') return;
     document.getElementById('loading').style.display = 'none';
     document.getElementById('loadError').style.display = 'block';
     var detail = moduleError || 'Unknown error';
+    // Add cache hint if it might be a cache issue
+    if (detail.indexOf('export') >= 0 || detail.indexOf('not found') >= 0) {
+      detail += ' | Kemungkinan browser cache lama — coba Ctrl+Shift+R (hard refresh) atau buka di Incognito';
+    }
     detail += ' | URL: ' + location.href;
     document.getElementById('errorDetail').textContent = detail;
   }
