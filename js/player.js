@@ -39,7 +39,7 @@ import { playSound } from './audio.js';
 import { justPressed, keys as inputKeys } from './input.js';
 import { tileCollision, getTileType, setDropThrough } from './physics.js';
 import { spawnParticle, spawnFloatingText, particles } from './particles.js';
-import { inventory, getComputedStats, useHealthPotion, updateBuffs, countHealthPotions, addItem } from './inventory.js';
+import { inventory, getComputedStats, useHealthPotion, updateBuffs, countHealthPotions, addItem, getWeightInfo } from './inventory.js';
 import { WEAPONS, ARMORS, ACCESSORIES, POTIONS } from './config.js';
 import { getEquipmentDropRate, getRandomEquipmentDropForStage, getBossDrop } from './entities.js';
 
@@ -335,8 +335,8 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
 
   // Regenerate stamina with delay and combat speed difference
   if (!isExerting && player.staminaRegenDelay <= 0 && player.stamina < effectiveMaxStamina) {
-    const regenRate = player.inCombat ? STAMINA_REGEN_RATE : STAMINA_REGEN_RATE_FAST;
-    player.stamina = Math.min(effectiveMaxStamina, player.stamina + regenRate);
+    const baseRegen = player.inCombat ? STAMINA_REGEN_RATE : STAMINA_REGEN_RATE_FAST;
+    player.stamina = Math.min(effectiveMaxStamina, player.stamina + baseRegen * weightStaminaRegenMult);
   }
 
   // ---- COYOTE TIME ----
@@ -358,7 +358,25 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
   }
 
   // Effective speed (from equipment + buffs + slow + water)
-  const effectiveSpeed = stats.speed * (player.slowTimer > 0 ? 0.5 : 1.0) * (player.inWater ? WATER_SPEED_MULT : 1.0);
+
+  // ---- WEIGHT & ENCUMBRANCE v0.7.2 ----
+  const weightInfo = getWeightInfo(player.level);
+  let weightSpeedMult = 1.0;
+  let weightStaminaRegenMult = 1.0;
+  let dodgeDistanceMult = 1.0;
+
+  if (weightInfo.category === 'heavy') {
+    weightSpeedMult = 0.8;
+    weightStaminaRegenMult = 0.5;
+    dodgeDistanceMult = 0.6;
+  } else if (weightInfo.category === 'medium') {
+    weightSpeedMult = 0.95;
+    weightStaminaRegenMult = 0.85;
+    dodgeDistanceMult = 0.9;
+  }
+
+  const effectiveSpeed = stats.speed * (player.slowTimer > 0 ? 0.5 : 1.0) * (player.inWater ? WATER_SPEED_MULT : 1.0) * weightSpeedMult;
+
 
   // ---- DODGE (Souls-like v0.7.0: generous i-frames) ----
   if (player.dodging) {
@@ -368,7 +386,7 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
     if (player.dodgeIFrame >= DODGE_I_FRAME_START && player.dodgeIFrame <= DODGE_I_FRAMES) {
       player.invincible = 3; // Keep refreshing invincibility during active i-frames
     }
-    player.vx = player.dodgeDir * DODGE_SPEED;
+    player.vx = player.dodgeDir * DODGE_SPEED * dodgeDistanceMult;
     if (player.dodgeTimer <= 0) {
       player.dodging = false;
       player.dodgeIFrame = 0;

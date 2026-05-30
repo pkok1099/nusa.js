@@ -41,8 +41,8 @@ export function updateBoss(boss, bossActive, hitStopTimer, player) {
 
   // Phase
   const hpPct = boss.hp / boss.maxHp;
-  if (hpPct > 0.66) boss.phase = 1;
-  else if (hpPct > 0.33) boss.phase = 2;
+  if (hpPct > 0.7) boss.phase = 1;
+  else if (hpPct > 0.4) boss.phase = 2;
   else boss.phase = 3;
 
   // Souls-like v0.7.1: Phase 2 transition (dramatic pause at 50% HP)

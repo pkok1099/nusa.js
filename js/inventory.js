@@ -166,12 +166,15 @@ export function getComputedStats(playerLevel) {
   const baseDefense = 0;
   const baseSpeed = PLAYER_SPEED;
 
+
   // Equipment bonuses
-  let weaponAtk = 0, weaponSpd = 0;
+  let weaponAtk = 0, weaponSpd = 0, weaponScalingMult = 0;
   if (inventory.equipment.weapon && WEAPONS[inventory.equipment.weapon]) {
     weaponAtk = WEAPONS[inventory.equipment.weapon].attack || 0;
     weaponSpd = WEAPONS[inventory.equipment.weapon].speed || 0;
+    weaponScalingMult = WEAPONS[inventory.equipment.weapon].scaleMult || 0;
   }
+
 
   let armorDef = 0;
   if (inventory.equipment.armor && ARMORS[inventory.equipment.armor]) {
@@ -207,7 +210,7 @@ export function getComputedStats(playerLevel) {
     maxHp: baseMaxHp + allocHp + accBonus.hp,
     maxStamina: baseMaxStamina + allocStamina + accBonus.stamina,
     maxEnergy: baseMaxEnergy + allocEnergy + accBonus.energy,
-    attack: baseAttack + weaponAtk + allocAttack + accBonus.attack + buffAttack,
+    attack: baseAttack + weaponAtk + Math.floor(allocAttack * (1 + weaponScalingMult)) + accBonus.attack + buffAttack,
     defense: baseDefense + armorDef + allocDefense + accBonus.defense + buffDefense,
     speed: baseSpeed + weaponSpd + allocSpeed + accBonus.speed + buffSpeed,
   };
@@ -227,6 +230,29 @@ export function getEquippedArmor() {
 export function getEquippedAccessory() {
   if (inventory.equipment.accessory) return { id: inventory.equipment.accessory, ...ACCESSORIES[inventory.equipment.accessory] };
   return null;
+}
+
+
+// Calculate current weight and load capacity
+export function getWeightInfo(playerLevel) {
+  const lvl = playerLevel || 1;
+  const maxLoad = 60 + (lvl - 1) * 2; // Each level increases load capacity slightly
+
+  let currentWeight = 0;
+  if (inventory.equipment.weapon && WEAPONS[inventory.equipment.weapon]) {
+    currentWeight += WEAPONS[inventory.equipment.weapon].weight || 0;
+  }
+  if (inventory.equipment.armor && ARMORS[inventory.equipment.armor]) {
+    currentWeight += ARMORS[inventory.equipment.armor].weight || 0;
+  }
+  // Accessories are weightless in this world
+
+  const ratio = currentWeight / maxLoad;
+  let category = 'light';
+  if (ratio > 0.7) category = 'heavy';
+  else if (ratio > 0.3) category = 'medium';
+
+  return { currentWeight, maxLoad, ratio, category };
 }
 
 // Update buffs (call each frame)

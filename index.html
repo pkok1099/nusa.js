@@ -146,7 +146,7 @@ canvas{display:block;margin:auto;image-rendering:pixelated}
   // Timeout — if game hasn't loaded in 15 seconds, show diagnostics
   setTimeout(function() {
     if (!moduleLoaded) {
-      var detail = 'Timeout setelah 15 detik.';
+      var detail = 'Timeout setelah 30 detik.';
       if (moduleError) detail += ' ' + moduleError;
       else detail += ' Tidak ada error tertangkap — buka Console (F12) untuk detail.';
       detail += ' | URL: ' + location.href;
@@ -154,7 +154,7 @@ canvas{display:block;margin:auto;image-rendering:pixelated}
       document.getElementById('loadError').style.display = 'block';
       document.getElementById('errorDetail').textContent = detail;
     }
-  }, 15000);
+  }, 30000);
 })();
 </script>
 </body>

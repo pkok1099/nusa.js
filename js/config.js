@@ -94,30 +94,30 @@ export const EQUIPMENT_SLOTS = ['weapon', 'armor', 'accessory'];
 
 // Weapon definitions
 export const WEAPONS = {
-  keris:      { name: 'Keris', attack: 5, speed: 0, desc: 'Keris sederhana', price: 0 },
-  pedang:     { name: 'Pedang Besi', attack: 12, speed: -0.2, desc: 'Pedang besi yang tajam', price: 150 },
-  tombak:     { name: 'Tombak Naga', attack: 18, speed: -0.5, desc: 'Tombak bertuliskan naga kuno', price: 350 },
-  keris_emas: { name: 'Keris Emas', attack: 25, speed: 0.3, desc: 'Keris pusaka kerajaan', price: 600 },
-  panah_api:  { name: 'Panah Api', attack: 20, speed: 0.5, desc: 'Panah berbakar bara api', price: 500 },
-  trisula:    { name: 'Trisula Dewa', attack: 35, speed: 0, desc: 'Senjata dewa pencipta', price: 1000 },
+  keris:      { name: 'Keris', attack: 5, speed: 0, desc: 'Keris sederhana', price: 0, weight: 1.0, scaling: "C", scaleMult: 0.6 },
+  pedang:     { name: 'Pedang Besi', attack: 12, speed: -0.2, desc: 'Pedang besi yang tajam', price: 150, weight: 3.5, scaling: "B", scaleMult: 1.0 },
+  tombak:     { name: 'Tombak Naga', attack: 18, speed: -0.5, desc: 'Tombak bertuliskan naga kuno', price: 350, weight: 6.0, scaling: "A", scaleMult: 1.5 },
+  keris_emas: { name: 'Keris Emas', attack: 25, speed: 0.3, desc: 'Keris pusaka kerajaan', price: 600, weight: 1.5, scaling: "S", scaleMult: 2.0 },
+  panah_api:  { name: 'Panah Api', attack: 20, speed: 0.5, desc: 'Panah berbakar bara api', price: 500, weight: 2.0, scaling: "B", scaleMult: 1.0 },
+  trisula:    { name: 'Trisula Dewa', attack: 35, speed: 0, desc: 'Senjata dewa pencipta', price: 1000, weight: 8.5, scaling: "A", scaleMult: 1.6 },
 };
 
 // Armor definitions
 export const ARMORS = {
-  kain:       { name: 'Kain Biasa', defense: 0, desc: 'Kain penutup tubuh', price: 0 },
-  kulit:      { name: 'Baju Kulit', defense: 5, desc: 'Baju dari kulit binatang', price: 120 },
-  besi:       { name: 'Besi Tempa', defense: 12, desc: 'Baju besi pandai besi', price: 300 },
-  perak:      { name: 'Baju Perak', defense: 18, desc: 'Baju perak bangsawan', price: 550 },
-  emas:       { name: 'Baju Emas', defense: 25, desc: 'Baju emas kerajaan', price: 900 },
-  naga:       { name: 'Baju Naga', defense: 35, desc: 'Baja legendaris sisik naga', price: 1500 },
+  kain:       { name: 'Kain Biasa', defense: 0, desc: 'Kain penutup tubuh', price: 0, weight: 0.0 },
+  kulit:      { name: 'Baju Kulit', defense: 5, desc: 'Baju dari kulit binatang', price: 120, weight: 4.0 },
+  besi:       { name: 'Besi Tempa', defense: 12, desc: 'Baju besi pandai besi', price: 300, weight: 12.0 },
+  perak:      { name: 'Baju Perak', defense: 18, desc: 'Baju perak bangsawan', price: 550, weight: 18.0 },
+  emas:       { name: 'Baju Emas', defense: 25, desc: 'Baju emas kerajaan', price: 900, weight: 25.0 },
+  naga:       { name: 'Baju Naga', defense: 35, desc: 'Baja legendaris sisik naga', price: 1500, weight: 35.0 },
 };
 
 // Accessory definitions
 export const ACCESSORIES = {
-  cincin_besi:    { name: 'Cincin Besi', effect: 'hp', value: 20, desc: '+20 HP Maks', price: 100 },
+  cincin_besi:    { name: 'Cincin Besi', effect: 'hp', value: 20, desc: '+20 HP Maks', price: 100, weight: 12.0 },
   kalung_batu:    { name: 'Kalung Batu', effect: 'stamina', value: 15, desc: '+15 Stamina Maks', price: 100 },
-  gelang_emas:    { name: 'Gelang Emas', effect: 'energy', value: 10, desc: '+10 Energi Maks', price: 150 },
-  cincin_naga:    { name: 'Cincin Naga', effect: 'attack', value: 8, desc: '+8 Serangan', price: 400 },
+  gelang_emas:    { name: 'Gelang Emas', effect: 'energy', value: 10, desc: '+10 Energi Maks', price: 150, weight: 25.0 },
+  cincin_naga:    { name: 'Cincin Naga', effect: 'attack', value: 8, desc: '+8 Serangan', price: 400, weight: 35.0 },
   kalung_dewa:    { name: 'Kalung Dewa', effect: 'defense', value: 10, desc: '+10 Pertahanan', price: 400 },
   gelang_angin:   { name: 'Gelang Angin', effect: 'speed', value: 0.5, desc: '+0.5 Kecepatan', price: 350 },
 };
@@ -174,6 +174,9 @@ export const STAGES = [
     introDialog: ['Candi Prambanan... tempat terakhir.', 'Raksasa Terakhir menunggu di puncak.', 'Semua artefak harus dikumpulkan.', 'Ini akhir dari segala awal, Arjuna.'],
   },
 ];
+
+// Weight system
+export const BASE_LOAD_CAPACITY = 60;
 
 // Skill point system
 export const STAT_NAMES = ['hp', 'stamina', 'energy', 'attack', 'defense', 'speed'];

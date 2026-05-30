@@ -544,6 +544,25 @@ export function drawBoss(boss, bossActive) {
     ctx.fillRect(-5, -5, boss.w + 10, boss.h + 10);
   }
 
+
+  // Souls-like v0.7.2: Phase 3 (Rage) aura
+  if (boss.phase === 3) {
+    const rageAlpha = Math.floor(60 + Math.sin(gameTime * 0.4) * 30).toString(16).padStart(2, '0');
+    ctx.strokeStyle = C.red + rageAlpha;
+    ctx.lineWidth = 3 + Math.sin(gameTime * 0.5) * 2;
+    ctx.strokeRect(-8, -8, boss.w + 16, boss.h + 16);
+
+    // Fire particles effect
+    if (gameTime % 5 === 0) {
+      // Note: we don't have easy access to spawnParticle here without importing it
+      // but we can draw some "embers" directly
+      ctx.fillStyle = C.orange + '80';
+      const ox = Math.random() * boss.w;
+      const oy = Math.random() * boss.h;
+      ctx.fillRect(ox, oy - gameTime % 20, 3, 3);
+    }
+  }
+
   const sid = boss.stageId || 0;
   switch (sid) {
     case 0: drawPenjagaBatu(ctx, boss); break;
@@ -1648,6 +1667,15 @@ export function drawLevelUp() {
     const statKey = stat === 'hp' ? 'maxHp' : stat === 'stamina' ? 'maxStamina' : stat === 'energy' ? 'maxEnergy' : stat;
     const val = statKey === 'speed' ? stats[statKey].toFixed(2) : stats[statKey];
     drawText(`${val}`, GAME_W / 2, sy + 20, 12, C.text, 'center');
+
+    // Souls-like v0.7.2: Show scaling bonus for Attack
+    if (stat === 'attack') {
+      const weapon = getEquippedWeapon();
+      if (weapon && weapon.scaling) {
+        drawText(`(Skala ${weapon.scaling})`, GAME_W / 2 + 35, sy + 32, 8, C.goldLight, 'center');
+      }
+    }
+
     drawText(`(+${STAT_PER_POINT[stat]} per poin)`, GAME_W / 2 + 60, sy + 20, 9, C.textDim, 'left');
 
     // + button
