@@ -23,6 +23,8 @@ export function setDamageCallbacks(dmgEnemy, dmgBoss, getEnts, getBoss, getBossA
 }
 
 export function spawnParticle(x, y, color, count = 5, speed = 3, life = 30) {
+  // BUG FIX v0.6.2: Cap particle count to prevent lag during intense combat
+  if (particles.length > 500) count = Math.min(count, 1);
   for (let i = 0; i < count; i++) {
     const angle = Math.random() * Math.PI * 2;
     const spd = Math.random() * speed + 0.5;

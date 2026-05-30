@@ -255,7 +255,9 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
           damageEnemy(e, totalDmg, entities);
       });
       if (bossActive && boss && boss.alive && rectsOverlapAtk(atkBox, boss))
-        damageBoss(boss, HEAVY_ATTACK_DAMAGE + player.level * 4 + stats.attack);
+        // BUG FIX v0.6.2: Use same level scaling as enemies (level*3)
+        // Previously used level*4 for bosses which was inconsistent
+        damageBoss(boss, HEAVY_ATTACK_DAMAGE + player.level * 3 + stats.attack);
       spawnParticle(player.x + player.w / 2 + player.facing * 30, player.y + player.h / 2, C.gold, 12, 5, 25);
       shakeRef.timer = 5; shakeRef.intensity = 4;
     }
@@ -721,7 +723,14 @@ export function damageBoss(boss, amount) {
       // Since damageBoss doesn't have entities, we'll add it to a drop queue
       bossDropQueue.push(bossDrop);
     }
-    setTimeout(() => { gameStateRef.value = 'victory'; }, 1500);
+    // BUG FIX v0.6.2: Replace setTimeout with frame-based victory timer
+    // to prevent race condition if player dies within 1.5s of boss death
+    hitStopRef.value = 90; // dramatic pause
+    if (typeof window !== 'undefined' && window.__nusaVictoryTimer) {
+      clearInterval(window.__nusaVictoryTimer);
+    }
+    window.__nusaVictoryTimer = { frames: 90 };
+
   }
 }
 

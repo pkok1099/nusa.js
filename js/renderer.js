@@ -28,7 +28,9 @@ export function drawRect(x, y, w, h, color, radius = 0) {
 
 export function drawBar(x, y, w, h, pct, bgColor, fillColor, radius = 4) {
   drawRect(x, y, w, h, bgColor, radius);
-  if (pct > 0) drawRect(x, y, Math.max(h, w * pct), h, fillColor, radius);
+  // BUG FIX v0.6.2: Use Math.max(1, ...) instead of Math.max(h, ...)
+  // to avoid misrepresenting low fill levels as fuller than they are
+  if (pct > 0) drawRect(x, y, Math.max(1, w * pct), h, fillColor, radius);
 }
 
 export function drawOutline(x, y, w, h, color, lineWidth = 2, radius = 0) {

@@ -206,6 +206,15 @@ function gameLoop() {
   if (hitStop.value > 0) hitStop.value--;
   if (parryFlash.timer > 0) parryFlash.timer--;
 
+  // BUG FIX v0.6.2: Frame-based victory timer (replaces setTimeout)
+  if (typeof window !== 'undefined' && window.__nusaVictoryTimer) {
+    window.__nusaVictoryTimer.frames--;
+    if (window.__nusaVictoryTimer.frames <= 0) {
+      gameState.value = 'victory';
+      window.__nusaVictoryTimer = null;
+    }
+  }
+
   let shakeX = 0, shakeY = 0;
   if (shake.timer > 0) {
     shake.timer--;
@@ -489,4 +498,5 @@ function gameLoop() {
 
 // ---- START ----
 loading.style.display = 'none';
+if (typeof window.__nusaLoaded === 'function') window.__nusaLoaded();
 gameLoop();

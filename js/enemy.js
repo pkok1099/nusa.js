@@ -60,7 +60,11 @@ export function updateEnemies(entities, hitStopTimer, player) {
       default: updateBatuKecil(e, player); break;
     }
 
-    // Collision X
+    // BUG FIX v0.6.2: Move X with collision detection FIRST,
+    // then check patrol bounds. Previous code did patrol movement
+    // inside enemy AI + collision after, causing double vx reversal
+    // when patrol boundary coincided with a wall.
+    e.x += e.vx;
     const colsX = tileCollision(e.x, e.y, e.w, e.h, e.prevY);
     colsX.forEach(c => {
       if (c.oneway) return;
@@ -69,6 +73,15 @@ export function updateEnemies(entities, hitStopTimer, player) {
       e.vx = -e.vx;
       e.facing = e.vx > 0 ? 1 : -1;
     });
+
+    // Check patrol bounds AFTER collision resolution
+    if (e.x <= e.patrol.left || e.x + e.w >= e.patrol.right) {
+      e.vx = -e.vx;
+      e.facing = e.vx > 0 ? 1 : -1;
+      // Clamp back into patrol zone
+      if (e.x <= e.patrol.left) e.x = e.patrol.left;
+      if (e.x + e.w >= e.patrol.right) e.x = e.patrol.right - e.w;
+    }
 
     // Move Y
     e.y += e.vy;
@@ -88,7 +101,9 @@ export function updateEnemies(entities, hitStopTimer, player) {
 const checkOverlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 
 function patrolEnemy(e) {
-  e.x += e.vx;
+  // BUG FIX v0.6.2: Only set vx direction here.
+  // Movement (e.x += e.vx) is now handled in the main enemy loop
+  // after collision detection, to prevent double vx reversal.
   if (e.x <= e.patrol.left || e.x + e.w >= e.patrol.right) {
     e.vx = -e.vx;
     e.facing = e.vx > 0 ? 1 : -1;
@@ -178,7 +193,8 @@ function updateHarimau(e, player) {
     }
   } else if (e.isAttacking) {
     e.attackAnimTimer--;
-    e.x += e.vx;
+    // BUG FIX v0.6.2: Don't move e.x directly here;
+    // main loop handles e.x += e.vx after collision detection.
     e.vx *= 0.92;
     if (e.attackAnimTimer === 8) executeMeleeHit(e, player, e.damage);
     if (e.attackAnimTimer <= 0) {
@@ -191,7 +207,7 @@ function updateHarimau(e, player) {
     // Fast patrol / chase
     if (dist < 200 && dist > 50) {
       e.vx = e.facing * 2.5;
-      e.x += e.vx;
+      // Movement handled in main loop
     } else if (dist <= 50) {
       e.isTelegraphing = true;
       e.telegraphTimer = 10;
@@ -261,10 +277,8 @@ function updateIblisKecil(e, player) {
     // Keep distance from player
     if (dist < 80) {
       e.vx = -e.facing * 1.5;  // back away
-      e.x += e.vx;
     } else if (dist > 180) {
       e.vx = e.facing * 1.5;  // move closer
-      e.x += e.vx;
     } else {
       e.vx = 0;
     }
@@ -306,11 +320,7 @@ function updateGolemApi(e, player) {
   } else {
     // Slow patrol
     e.vx = e.facing * 0.6;
-    e.x += e.vx;
-    if (e.x <= e.patrol.left || e.x + e.w >= e.patrol.right) {
-      e.vx = -e.vx;
-      e.facing = e.vx > 0 ? 1 : -1;
-    }
+    // Movement handled in main loop
     if (e.attackCooldown > 0) e.attackCooldown--;
     else if (dist < 90) {
       e.isTelegraphing = true;
@@ -338,7 +348,7 @@ function updateIkanPedang(e, player) {
     }
   } else if (e.isAttacking) {
     e.attackAnimTimer--;
-    e.x += e.vx;
+    // BUG FIX v0.6.2: Don't move e.x directly; main loop handles it
     e.vx *= 0.88;
     if (e.attackAnimTimer === 6) executeMeleeHit(e, player, e.damage);
     if (e.attackAnimTimer <= 0) {
@@ -349,7 +359,6 @@ function updateIkanPedang(e, player) {
     // Fast patrol / chase
     if (dist < 150) {
       e.vx = e.facing * 3;
-      e.x += e.vx;
     } else {
       patrolEnemy(e);
     }
@@ -416,7 +425,6 @@ function updatePrajuritJahat(e, player) {
     // Patrol / chase
     if (dist < 120) {
       e.vx = e.facing * 1.8;
-      e.x += e.vx;
     } else {
       patrolEnemy(e);
     }
@@ -465,11 +473,7 @@ function updateRaksasaKecil(e, player) {
   } else {
     // Slow patrol
     e.vx = e.facing * 1.0;
-    e.x += e.vx;
-    if (e.x <= e.patrol.left || e.x + e.w >= e.patrol.right) {
-      e.vx = -e.vx;
-      e.facing = e.vx > 0 ? 1 : -1;
-    }
+    // Movement handled in main loop
 
     if (e.attackCooldown > 0) e.attackCooldown--;
     else if (dist < 180) {

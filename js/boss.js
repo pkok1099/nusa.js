@@ -134,6 +134,10 @@ export function updateBoss(boss, bossActive, hitStopTimer, player) {
 }
 
 function applyBossGravity(boss) {
+  // BUG FIX v0.6.2: Add gravity acceleration here too,
+  // otherwise boss floats during stagger/recovery
+  boss.vy += GRAVITY;
+  if (boss.vy > MAX_FALL) boss.vy = MAX_FALL;
   boss.y += boss.vy;
   boss.grounded = false;
   const colsY = tileCollision(boss.x, boss.y, boss.w, boss.h, boss.prevY);
@@ -346,10 +350,11 @@ export function executeBossAttack(boss, player) {
       break;
 
     case 'charge':
-      // BUG FIX v0.6.2: Cap charge distance and add collision check
-      // to prevent boss from teleporting through walls
+      // BUG FIX v0.6.2: Fix charge distance calculation.
+      // Old formula Math.min(facing * speed * frames, maxDist) was wrong
+      // because facing*30 < maxDist always, so cap never took effect.
       {
-        const chargeDist = Math.min(boss.facing * 6 * 5, 150); // cap at 150px
+        const chargeDist = boss.facing * 150; // charge ~5 tiles
         boss.vx = boss.facing * 6;
         boss.x += chargeDist;
         // Collision check after charge
@@ -378,7 +383,7 @@ export function executeBossAttack(boss, player) {
     // Raja Hutan attacks
     case 'pounce': {
       // BUG FIX v0.6.2: Cap pounce distance and add collision check
-      const pounceDist = Math.min(boss.facing * 7 * 3, 120); // cap at 120px
+      const pounceDist = boss.facing * 120; // pounce ~4 tiles
       boss.x += pounceDist;
       const pounceCols = tileCollision(boss.x, boss.y, boss.w, boss.h, boss.prevY);
       pounceCols.forEach(c => {
@@ -463,7 +468,7 @@ export function executeBossAttack(boss, player) {
 
     case 'fireCharge': {
       // BUG FIX v0.6.2: Cap charge distance and add collision check
-      const fcDist = Math.min(boss.facing * 8 * 4, 180); // cap at 180px
+      const fcDist = boss.facing * 180; // fire charge ~6 tiles
       boss.vx = boss.facing * 8;
       boss.x += fcDist;
       const fcCols = tileCollision(boss.x, boss.y, boss.w, boss.h, boss.prevY);
@@ -503,10 +508,20 @@ export function executeBossAttack(boss, player) {
       break;
 
     case 'whirlpool': {
-      // Pull player toward boss
-      const pullStrength = 3;
-      if (player.x < boss.x) player.x += pullStrength;
-      else player.x -= pullStrength;
+      // BUG FIX v0.6.2: Respect dodge invincibility; check wall collision
+      // after pulling player to avoid pushing them through walls
+      if (!player.dodging) {
+        const pullStrength = 3;
+        if (player.x < boss.x) player.x += pullStrength;
+        else player.x -= pullStrength;
+        // Wall collision check for pulled player
+        const pullCols = tileCollision(player.x, player.y, player.w, player.h, player.prevY);
+        pullCols.forEach(c => {
+          if (c.oneway) return;
+          if (player.x < boss.x) player.x = c.x + c.w;
+          else player.x = c.x - player.w;
+        });
+      }
       if (dist < 60 && player.invincible <= 0)
         damagePlayer(Math.floor(15 * dmgMult));
       spawnParticle(boss.x + boss.w / 2, boss.y + boss.h, C.cyan, 20, 4, 50);
@@ -547,7 +562,7 @@ export function executeBossAttack(boss, player) {
 
     case 'shieldBash': {
       // BUG FIX v0.6.2: Cap shield bash distance and add collision check
-      const sbDist = Math.min(boss.facing * 7 * 3, 140); // cap at 140px
+      const sbDist = boss.facing * 140; // shield bash ~4.5 tiles
       boss.vx = boss.facing * 7;
       boss.x += sbDist;
       const sbCols = tileCollision(boss.x, boss.y, boss.w, boss.h, boss.prevY);

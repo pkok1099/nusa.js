@@ -11,15 +11,30 @@ canvas{display:block;margin:auto;image-rendering:pixelated}
 #gameContainer{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#000}
 #loading{position:absolute;color:#D4AF37;font-size:18px;text-align:center;top:50%;left:50%;transform:translate(-50%,-50%)}
 #loading .sub{font-size:12px;color:#D4AF3788;margin-top:8px}
-#loadError{display:none;position:absolute;color:#FF6666;font-size:14px;text-align:center;top:60%;left:50%;transform:translate(-50%,-50%);max-width:500px}
+#loadError{display:none;position:absolute;color:#FF6666;font-size:14px;text-align:center;top:55%;left:50%;transform:translate(-50%,-50%);max-width:550px;line-height:1.6}
 #loadError a{color:#D4AF37}
+#loadError code{color:#D4AF37;font-size:13px;background:#1A1A0A;padding:2px 6px;border-radius:3px}
+#loadError .title{color:#FF6666;font-size:18px;font-weight:bold;margin-bottom:12px}
+#loadError .detail{color:#D4AF3788;font-size:11px;margin-top:12px;word-break:break-all}
 </style>
 </head>
 <body>
 <div id="gameContainer">
 <canvas id="gameCanvas"></canvas>
 <div id="loading">MEMUAT NUSANTARA...<div class="sub">Harap tunggu sebentar</div></div>
-<div id="loadError">Gagal memuat modul game.<br>Pastikan file dijalankan via HTTP server (bukan file://).<br>Coba: <code>npx serve .</code> atau <code>python3 -m http.server</code><br><a href="https://github.com/pkok1099/nusa.js" target="_blank">GitHub Repo</a></div>
+<div id="loadError">
+  <div class="title">Gagal Memuat Game</div>
+  <div>Pastikan file dijalankan via HTTP server (bukan file://).</div>
+  <div style="margin-top:8px">Coba dari folder <code>game/</code>:</div>
+  <div style="margin-top:4px"><code>cd game && npx serve .</code></div>
+  <div style="margin-top:2px">atau</div>
+  <div><code>cd game && python3 -m http.server 8000</code></div>
+  <div style="margin-top:8px">Lalu buka <code>http://localhost:8000</code></div>
+  <div style="margin-top:10px">Atau gunakan build produksi:</div>
+  <div><code>node build.js</code> lalu buka <code>dist/index.html</code></div>
+  <div class="detail" id="errorDetail"></div>
+  <div style="margin-top:8px"><a href="https://github.com/pkok1099/nusa.js" target="_blank">GitHub Repo</a></div>
+</div>
 </div>
 
 <!-- ES Module Entry Point — browser native, no build tool needed -->
@@ -27,18 +42,61 @@ canvas{display:block;margin:auto;image-rendering:pixelated}
 
 <!-- Touch controls module — initializes on mobile devices -->
 <script type="module">
-  import { initTouchControls } from './js/touch.js';
-  initTouchControls();
+  try {
+    const { initTouchControls } = await import('./js/touch.js');
+    initTouchControls();
+  } catch(e) {
+    console.warn('Touch controls gagal dimuat:', e.message);
+  }
 </script>
 
-<!-- Fallback: if module fails to load (e.g. file:// protocol), show error -->
+<!-- Fallback: if module fails to load, show error with diagnostics -->
 <script>
-window.addEventListener('error', function(e) {
-  if (e.target && e.target.tagName === 'SCRIPT') {
+(function() {
+  var moduleLoaded = false;
+  var errorInfo = '';
+
+  // Detect file:// protocol early
+  if (location.protocol === 'file:') {
     document.getElementById('loading').style.display = 'none';
     document.getElementById('loadError').style.display = 'block';
+    document.getElementById('errorDetail').textContent = 'Protocol: file:// (perlu HTTP server)';
+    return;
   }
-}, true);
+
+  // Listen for script load errors
+  window.addEventListener('error', function(e) {
+    // Only handle script element errors (not window-level runtime errors)
+    if (e.target && e.target.tagName === 'SCRIPT') {
+      var src = e.target.src || '(inline)';
+      errorInfo = 'Script gagal: ' + src;
+      console.error('[NUSANTARA] Module load error:', src);
+      if (!moduleLoaded) {
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('loadError').style.display = 'block';
+        document.getElementById('errorDetail').textContent = errorInfo;
+      }
+    }
+  }, true);
+
+  // Mark as loaded when game.js runs successfully
+  window.__nusaLoaded = function() {
+    moduleLoaded = true;
+  };
+
+  // Timeout — if game hasn't loaded in 10 seconds, show diagnostics
+  setTimeout(function() {
+    if (!moduleLoaded) {
+      var detail = 'Timeout setelah 10 detik.';
+      if (errorInfo) detail += ' ' + errorInfo;
+      else detail += ' Tidak ada error tertangkap — cek Console (F12) untuk detail.';
+      detail += ' URL: ' + location.href;
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('loadError').style.display = 'block';
+      document.getElementById('errorDetail').textContent = detail;
+    }
+  }, 10000);
+})();
 </script>
 </body>
 </html>

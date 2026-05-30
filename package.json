@@ -24,7 +24,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nusa-js/nusa.js.git"
+    "url": "https://github.com/pkok1099/nusa.js.git"
   },
   "devDependencies": {
     "rollup": "^4.60.4",
