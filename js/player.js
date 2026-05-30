@@ -17,6 +17,14 @@ import {
   HIT_STOP_FRAMES, SKILL_DAMAGE, INV_FRAMES, GROUND_Y, C,
   SKILL_POINTS_PER_LEVEL, ARROW_SPEED, ARROW_DAMAGE, ARROW_RANGE, ARROW_COST,
   WATER_GRAVITY, SWIM_FORCE, WATER_SPEED_MULT,
+  // Souls-like system v0.7.0
+  ESTUS_MAX, ESTUS_HEAL_AMOUNT,
+  DEATH_RUPIAH_LOSS_PCT, DEATH_RUPIAH_RECOVERY,
+  STAMINA_REGEN_DELAY, STAMINA_REGEN_RATE, STAMINA_REGEN_RATE_FAST, STAMINA_JUMP_COST,
+  DODGE_I_FRAMES, DODGE_I_FRAME_START,
+  PARRY_ACTIVE_WINDOW, PARRY_RECOVERY, PARRY_STAMINA_REFUND,
+  BACKSTAB_DAMAGE_MULT, POSTURE_BREAK_DAMAGE_MULT,
+  HIT_STOP_HEAVY, HIT_STOP_PARRY, SCREEN_SHAKE_LIGHT, SCREEN_SHAKE_HEAVY, SCREEN_SHAKE_CRIT,
 } from './config.js';
 import { playSound } from './audio.js';
 import { justPressed, keys as inputKeys } from './input.js';
@@ -70,6 +78,22 @@ export const player = {
   dropThrough: 0,
   // Water swimming state
   inWater: false,
+  // Souls-like: Estus Flask (healing charges that refill at checkpoints)
+  estus: ESTUS_MAX,
+  estusMax: ESTUS_MAX,
+  // Souls-like: Bloodstain (recover lost Rupiah by reaching death location)
+  bloodstain: null, // { x, y, rupiah } or null
+  lostRupiah: 0,
+  // Souls-like: Stamina regeneration delay
+  staminaRegenDelay: 0,
+  // Souls-like: Dodge i-frame counter
+  dodgeIFrame: 0,
+  // Souls-like: In-combat flag (affects stamina regen speed)
+  inCombat: false,
+  combatTimer: 0,
+  // Bonfire healing state
+  bonfireHealing: false,
+  bonfireHealTimer: 0,
 };
 
 // Shared mutable state references (set from game.js)
@@ -198,10 +222,23 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
     return;
   }
 
-  // ---- STAMINA REGEN ----
+  // ---- STAMINA REGEN (Souls-like v0.7.0) ----
+  // Stamina doesn't regenerate instantly after actions — there's a delay
   const isExerting = player.dodging || player.attacking || player.heavyAttacking || player.parryTimer > 0;
-  if (!isExerting && player.stamina < effectiveMaxStamina) {
-    player.stamina = Math.min(effectiveMaxStamina, player.stamina + STAMINA_REGEN);
+  if (isExerting) {
+    player.staminaRegenDelay = STAMINA_REGEN_DELAY;
+  } else if (player.staminaRegenDelay > 0) {
+    player.staminaRegenDelay--;
+  }
+
+  // Combat timer — if player recently took/dealt damage, they're "in combat"
+  if (player.combatTimer > 0) player.combatTimer--;
+  player.inCombat = player.combatTimer > 0;
+
+  // Regenerate stamina with delay and combat speed difference
+  if (!isExerting && player.staminaRegenDelay <= 0 && player.stamina < effectiveMaxStamina) {
+    const regenRate = player.inCombat ? STAMINA_REGEN_RATE : STAMINA_REGEN_RATE_FAST;
+    player.stamina = Math.min(effectiveMaxStamina, player.stamina + regenRate);
   }
 
   // ---- COYOTE TIME ----
@@ -225,12 +262,19 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
   // Effective speed (from equipment + buffs + slow + water)
   const effectiveSpeed = stats.speed * (player.slowTimer > 0 ? 0.5 : 1.0) * (player.inWater ? WATER_SPEED_MULT : 1.0);
 
-  // ---- DODGE ----
+  // ---- DODGE (Souls-like v0.7.0: generous i-frames) ----
   if (player.dodging) {
     player.dodgeTimer--;
+    // Track dodge i-frames for precise invincibility
+    player.dodgeIFrame++;
+    if (player.dodgeIFrame >= DODGE_I_FRAME_START && player.dodgeIFrame <= DODGE_I_FRAMES) {
+      player.invincible = 3; // Keep refreshing invincibility during active i-frames
+    }
     player.vx = player.dodgeDir * DODGE_SPEED;
-    player.invincible = 3;
-    if (player.dodgeTimer <= 0) player.dodging = false;
+    if (player.dodgeTimer <= 0) {
+      player.dodging = false;
+      player.dodgeIFrame = 0;
+    }
   }
   // ---- LIGHT ATTACK ----
   else if (player.attacking) {
@@ -258,8 +302,9 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
         // BUG FIX v0.6.2: Use same level scaling as enemies (level*3)
         // Previously used level*4 for bosses which was inconsistent
         damageBoss(boss, HEAVY_ATTACK_DAMAGE + player.level * 3 + stats.attack);
-      spawnParticle(player.x + player.w / 2 + player.facing * 30, player.y + player.h / 2, C.gold, 12, 5, 25);
-      shakeRef.timer = 5; shakeRef.intensity = 4;
+      spawnParticle(player.x + player.w / 2 + player.facing * 30, player.y + player.h / 2, C.gold, 15, 6, 30);
+      shakeRef.timer = 5; shakeRef.intensity = SCREEN_SHAKE_HEAVY;
+      hitStopRef.value = HIT_STOP_HEAVY;
     }
     if (player.heavyAttackTimer <= 0) player.heavyAttacking = false;
   }
@@ -277,20 +322,21 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
     if (keys['ArrowRight'] || keys['KeyD']) { player.vx = effectiveSpeed; player.facing = 1; }
   }
 
-  // ==== JUMP (outside else blocks) ====
-  // BUG FIX v0.6.2: Added dodge/parry state checks to prevent jump during
-  // actions that should lock the player in place (dodge, parry window).
-  // Also added drop-through check to prevent jumping while dropping.
+  // ==== JUMP (outside else blocks) — Souls-like: costs stamina ====
   if (player.jumpBufferTimer > 0 && player.coyoteTimer > 0 && !player.healing && !player.dodging && player.parryTimer <= 0 && player.dropThrough <= 0) {
-    player.vy = JUMP_FORCE;
-    player.grounded = false;
-    player.coyoteTimer = 0;
-    player.jumpBufferTimer = 0;
-    player.attacking = false;
-    player.heavyAttacking = false;
-    player.comboWindow = 0;
-    player.parryTimer = 0;
-    playSound('jump');
+    // Souls-like v0.7.0: Jumping costs stamina (prevents infinite jumping away from enemies)
+    if (player.stamina >= STAMINA_JUMP_COST) {
+      player.stamina -= STAMINA_JUMP_COST;
+      player.vy = JUMP_FORCE;
+      player.grounded = false;
+      player.coyoteTimer = 0;
+      player.jumpBufferTimer = 0;
+      player.attacking = false;
+      player.heavyAttacking = false;
+      player.comboWindow = 0;
+      player.parryTimer = 0;
+      playSound('jump');
+    }
   }
 
   // ==== LIGHT ATTACK (SPACE) ====
@@ -457,19 +503,18 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
       });
     }
     if (!interacted && !player.dodging && !player.attacking && !player.heavyAttacking && player.parryTimer <= 0) {
-      // Try to use health potion from inventory
-      if (player.hp < effectiveMaxHp) {
-        const result = useHealthPotion();
-        if (result && result.type === 'health') {
-          player.healing = true;
-          player.healingTimer = 0;
-          player.healTicksRemaining = HEAL_TICKS;
-          player.healPerTick = result.value / HEAL_TICKS;
-          player.attacking = false; player.heavyAttacking = false;
-          player.comboWindow = 0; player.parryTimer = 0; player.attackCombo = 0;
-          playSound('heal');
-          interacted = true;
-        }
+      // Souls-like v0.7.0: Use Estus Flask (E key) instead of health potion
+      if (player.hp < effectiveMaxHp && player.estus > 0) {
+        player.estus--;
+        player.healing = true;
+        player.healingTimer = 0;
+        player.healTicksRemaining = HEAL_TICKS;
+        player.healPerTick = ESTUS_HEAL_AMOUNT / HEAL_TICKS;
+        player.attacking = false; player.heavyAttacking = false;
+        player.comboWindow = 0; player.parryTimer = 0; player.attackCombo = 0;
+        playSound('heal');
+        spawnFloatingText(player.x + player.w / 2, player.y - 30, `Estus (${player.estus}/${player.estusMax})`, C.green);
+        interacted = true;
       }
     }
   }
@@ -517,16 +562,39 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
     }
   });
 
-  // Checkpoint
+  // Checkpoint — Souls-like: acts as a bonfire (refills estus, heals, auto-saves)
   const cptx = Math.floor((player.x + player.w / 2) / 32);
   const cpty = Math.floor((player.y + player.h) / 32);
   if (tileMap && cpty >= 0 && cpty < tileMap.length && cptx >= 0 && cptx < tileMap[0].length) {
     if (tileMap[cpty][cptx] === 9) {
       player.checkpoint = { x: player.x, y: player.y };
       tileMap[cpty][cptx] = 0;
-      spawnFloatingText(player.x, player.y - 30, 'Checkpoint!', C.gold);
-      spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.gold, 15, 3, 40);
+      // Souls-like v0.7.0: Bonfire checkpoint — refill estus and fully heal
+      player.hp = effectiveMaxHp;
+      player.stamina = effectiveMaxStamina;
+      player.energy = effectiveMaxEnergy;
+      player.estus = player.estusMax;
+      // Clear status effects
+      player.poisonTimer = 0;
+      player.stunTimer = 0;
+      player.slowTimer = 0;
+      spawnFloatingText(player.x, player.y - 30, 'Bonfire! Estus Dipulihkan', C.gold);
+      spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.gold, 25, 5, 50);
+      spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.green, 15, 3, 40);
       playSound('checkpoint');
+
+      // Check bloodstain — recover lost Rupiah
+      if (player.bloodstain) {
+        const bDist = Math.abs(player.x - player.bloodstain.x) + Math.abs(player.y - player.bloodstain.y);
+        if (bDist < 100) {
+          player.rupiah += player.bloodstain.rupiah;
+          spawnFloatingText(player.x, player.y - 50, `+${player.bloodstain.rupiah} Rupiah (Dipulihkan)`, C.goldLight);
+          spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.goldLight, 20, 4, 40);
+          player.bloodstain = null;
+          player.lostRupiah = 0;
+        }
+      }
+
       // Auto-save on checkpoint
       if (onCheckpointCallback) onCheckpointCallback();
     }
@@ -534,6 +602,20 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
 
   // Fall death
   if (tileMap && player.y > tileMap.length * 32 + 100) playerDie();
+
+  // Souls-like v0.7.0: Bloodstain proximity recovery
+  // If player walks near their bloodstain, recover lost Rupiah
+  if (player.bloodstain) {
+    const bDist = Math.abs(player.x - player.bloodstain.x) + Math.abs(player.y - player.bloodstain.y);
+    if (bDist < 40) {
+      player.rupiah += player.bloodstain.rupiah;
+      spawnFloatingText(player.x, player.y - 40, `+${player.bloodstain.rupiah} Rupiah!`, C.goldLight);
+      spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.goldLight, 20, 4, 40);
+      playSound('pickup');
+      player.bloodstain = null;
+      player.lostRupiah = 0;
+    }
+  }
 
   // Energy regen
   if (player.energy < effectiveMaxEnergy) player.energy += 0.05;
@@ -606,13 +688,19 @@ function rectsOverlapAtk(a, b) {
 
 export function damagePlayer(amount) {
   if (player.invincible > 0 || player.dodging) return;
+  // Souls-like v0.7.0: Check parry active window
   if (player.parryWindow > 0) {
     parryFlashRef.timer = 15;
     player.invincible = 20;
+    // Souls-like: Parry refunds stamina
+    player.stamina = Math.min(player.stamina + PARRY_STAMINA_REFUND, getStats().maxStamina);
     playSound('parrySuccess');
-    spawnParticle(player.x + player.w / 2 + player.facing * 15, player.y + player.h / 2, C.parryGold, 15, 5, 30);
+    spawnParticle(player.x + player.w / 2 + player.facing * 15, player.y + player.h / 2, C.parryGold, 20, 6, 35);
     spawnFloatingText(player.x, player.y - 30, 'PARRY!', C.parryGold);
-    shakeRef.timer = 3; shakeRef.intensity = 2;
+    shakeRef.timer = 3; shakeRef.intensity = SCREEN_SHAKE_LIGHT;
+    hitStopRef.value = HIT_STOP_PARRY;
+    // Set combat timer
+    player.combatTimer = 120;
     return;
   }
   if (player.healing) player.healing = false;
@@ -625,35 +713,59 @@ export function damagePlayer(amount) {
   player.hp -= reducedDamage;
   player.invincible = INV_FRAMES;
   player.hurtTimer = 15;
+  // Souls-like v0.7.0: Taking damage triggers combat state
+  player.combatTimer = 180; // 3 seconds in combat after taking damage
   playSound('damage');
-  spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.red, 8, 3);
+  spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.red, 12, 4);
   spawnFloatingText(player.x + player.w / 2, player.y - 30, `-${reducedDamage}`, C.red);
-  shakeRef.timer = 8; shakeRef.intensity = 4;
+  shakeRef.timer = 8; shakeRef.intensity = SCREEN_SHAKE_HEAVY;
+  hitStopRef.value = HIT_STOP_FRAMES;
   if (player.hp <= 0) { player.hp = 0; playerDie(); }
 }
 
 export function playerDie() {
-  // Death penalty: lose 30% of current Rupiah (souls-like)
-  const lostRupiah = Math.floor(player.rupiah * 0.3);
+  // Souls-like v0.7.0: Death penalty — lose Rupiah, create bloodstain for recovery
+  const lostRupiah = Math.floor(player.rupiah * DEATH_RUPIAH_LOSS_PCT);
   player.rupiah = Math.max(0, player.rupiah - lostRupiah);
   if (lostRupiah > 0) {
     spawnFloatingText(player.x + player.w / 2, player.y - 30, `-${lostRupiah} Rupiah`, C.red);
+    // Create bloodstain at death location for Rupiah recovery
+    const recoverableRupiah = Math.floor(lostRupiah * DEATH_RUPIAH_RECOVERY);
+    player.bloodstain = { x: player.x, y: player.y, rupiah: recoverableRupiah };
+    player.lostRupiah = recoverableRupiah;
   }
   // Store last lost rupiah for death screen display
   player.lastLostRupiah = lostRupiah;
 
   gameStateRef.value = 'gameOver';
   deathCountRef.value++;
-  spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.red, 30, 5, 60);
+  spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.red, 40, 6, 60);
+  // Blood particles — more dramatic death
+  for (let i = 0; i < 8; i++) {
+    spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.redDark + 'AA', 5, 4, 50);
+  }
 }
 
 export function damageEnemy(e, amount, entities) {
+  // Souls-like v0.7.0: Backstab check — bonus damage from behind
+  const isBehindEnemy = (player.facing > 0 && e.facing < 0) || (player.facing < 0 && e.facing > 0);
+  if (isBehindEnemy && !e.staggered) {
+    amount = Math.floor(amount * BACKSTAB_DAMAGE_MULT);
+    spawnFloatingText(e.x + e.w / 2, e.y - 25, 'BACKSTAB!', C.parryGold);
+  }
+
+  // Souls-like v0.7.0: Posture break bonus — more damage on staggered enemies
+  if (e.staggered) {
+    amount = Math.floor(amount * POSTURE_BREAK_DAMAGE_MULT);
+  }
+
   e.hp -= amount;
   e.hurtTimer = 10;
+  player.combatTimer = 120; // Enter combat state when dealing damage
   playSound('hit');
-  spawnParticle(e.x + e.w / 2, e.y + e.h / 2, C.orange, 6, 3);
+  spawnParticle(e.x + e.w / 2, e.y + e.h / 2, C.orange, 8, 4);
   spawnFloatingText(e.x + e.w / 2, e.y - 10, `-${amount}`, C.goldLight);
-  shakeRef.timer = 3; shakeRef.intensity = 2;
+  shakeRef.timer = 3; shakeRef.intensity = SCREEN_SHAKE_LIGHT;
   hitStopRef.value = HIT_STOP_FRAMES;
   if (e.hp <= 0) {
     e.alive = false;
@@ -723,11 +835,14 @@ export function damageBoss(boss, amount) {
       // Since damageBoss doesn't have entities, we'll add it to a drop queue
       bossDropQueue.push(bossDrop);
     }
-    // BUG FIX v0.6.2: Replace setTimeout with frame-based victory timer
-    // to prevent race condition if player dies within 1.5s of boss death
+    // BUG FIX v0.7.0: Replace setTimeout with frame-based victory timer
+    // to prevent race condition if player dies within 1.5s of boss death.
+    // Also added game state check to prevent victory timer from
+    // overriding game over state.
     hitStopRef.value = 90; // dramatic pause
     if (typeof window !== 'undefined' && window.__nusaVictoryTimer) {
-      clearInterval(window.__nusaVictoryTimer);
+      // Clean up any previous timer (no clearInterval needed - it's a plain object)
+      window.__nusaVictoryTimer = null;
     }
     window.__nusaVictoryTimer = { frames: 90 };
 
@@ -779,6 +894,12 @@ export function resetPlayer() {
     currentStageId: 0,
     lastLostRupiah: 0,
     dropThrough: 0, inWater: false,
+    // Souls-like v0.7.0 fields
+    estus: ESTUS_MAX, estusMax: ESTUS_MAX,
+    bloodstain: null, lostRupiah: 0,
+    staminaRegenDelay: 0, dodgeIFrame: 0,
+    inCombat: false, combatTimer: 0,
+    bonfireHealing: false, bonfireHealTimer: 0,
   });
 }
 
@@ -798,6 +919,15 @@ export function respawnPlayer() {
   player.attackCombo = 0; player.hurtTimer = 0;
   player.coyoteTimer = 0; player.jumpBufferTimer = 0;
   player.poisonTimer = 0; player.stunTimer = 0; player.slowTimer = 0;
+  player.lavaDamageTimer = 0;
   player.dropThrough = 0; player.inWater = false;
+  // Souls-like v0.7.0: Reset combat state and stamina regen on respawn
+  player.staminaRegenDelay = 0;
+  player.dodgeIFrame = 0;
+  player.combatTimer = 0;
+  player.inCombat = false;
+  player.bonfireHealing = false;
+  player.bonfireHealTimer = 0;
+  // Estus is NOT refilled on respawn (only at bonfires)
   gameStateRef.value = 'playing';
 }

@@ -18,6 +18,11 @@ export function saveGame(player, inventory, unlockedStages, deathCount, currentS
         keys: player.keys,
         currentStageId: player.currentStageId,
         checkpoint: { ...player.checkpoint },
+        // Souls-like v0.7.0: Save estus and bloodstain data
+        estus: player.estus,
+        estusMax: player.estusMax,
+        bloodstain: player.bloodstain ? { ...player.bloodstain } : null,
+        lostRupiah: player.lostRupiah,
       },
       inventory: {
         items: inventory.items.map(item => ({ ...item })),

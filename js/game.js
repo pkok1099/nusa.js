@@ -4,7 +4,7 @@
 
 import { GAME_W, GAME_H, STAGES, WEAPONS, ARMORS, ACCESSORIES, POTIONS, C } from './config.js';
 import { initAudio, playSound } from './audio.js';
-import { keys, savePrevKeys, setupInput, justPressed } from './input.js';
+import { keys, savePrevKeys, setupInput, justPressed, mouse } from './input.js';
 import { setTileMap } from './physics.js';
 import { camera, updateCamera } from './camera.js';
 import { particles, floatingTexts, updateParticles, clearParticles, spawnFloatingText, setDamageCallbacks } from './particles.js';
@@ -25,7 +25,7 @@ import {
   drawDialog, drawMenu, drawPuzzle, drawBossIntro, drawGameOver, drawVictory,
   drawInventory, drawShop, drawStageSelect, drawLevelUp,
   setGameTime, resetBossIntroTimer, resetGameOverTimer, setCurrentStageId, setInvTab,
-  showSaveIndicator, drawMiniMap,
+  showSaveIndicator, drawMiniMap, drawBloodstain,
 } from './draw-game.js';
 import { saveGame, loadGame, hasSaveGame, deleteSaveGame } from './save.js';
 
@@ -113,6 +113,18 @@ function startStage(stageId) {
   player.vx = 0;
   player.vy = 0;
   player.invincible = 60;
+  // Souls-like v0.7.0: Full heal on stage start (bonfire-style)
+  player.hp = stats.maxHp;
+  player.stamina = stats.maxStamina;
+  player.energy = stats.maxEnergy;
+  player.poisonTimer = 0;
+  player.stunTimer = 0;
+  player.slowTimer = 0;
+  player.combatTimer = 0;
+  player.inCombat = false;
+  player.staminaRegenDelay = 0;
+  // Refill estus when starting a new stage
+  player.estus = player.estusMax;
 
   camera.x = 0; camera.y = 0;
   clearParticles();
@@ -156,6 +168,11 @@ function continueGame() {
   if (data.player.checkpoint) {
     player.checkpoint = data.player.checkpoint;
   }
+  // Souls-like v0.7.0: Restore estus and bloodstain
+  player.estus = data.player.estus !== undefined ? data.player.estus : 5;
+  player.estusMax = data.player.estusMax !== undefined ? data.player.estusMax : 5;
+  player.bloodstain = data.player.bloodstain || null;
+  player.lostRupiah = data.player.lostRupiah || 0;
   // Restore inventory
   if (data.inventory) {
     inventory.items = data.inventory.items || [];
@@ -206,11 +223,15 @@ function gameLoop() {
   if (hitStop.value > 0) hitStop.value--;
   if (parryFlash.timer > 0) parryFlash.timer--;
 
-  // BUG FIX v0.6.2: Frame-based victory timer (replaces setTimeout)
+  // BUG FIX v0.7.0: Frame-based victory timer (replaces setTimeout)
+  // Added game state check to prevent victory timer from overriding game over state
   if (typeof window !== 'undefined' && window.__nusaVictoryTimer) {
     window.__nusaVictoryTimer.frames--;
     if (window.__nusaVictoryTimer.frames <= 0) {
-      gameState.value = 'victory';
+      // Only transition to victory if not already in game over state
+      if (gameState.value !== 'gameOver') {
+        gameState.value = 'victory';
+      }
       window.__nusaVictoryTimer = null;
     }
   }
@@ -269,6 +290,7 @@ function gameLoop() {
       drawEnemies(entities);
       drawBoss(boss, bossActive);
       drawPlayer(parryFlash.timer);
+      drawBloodstain();
       drawParticles(particles, floatingTexts);
       drawHUD(boss, bossActive, deathCount.value);
       drawMiniMap(tileMap, entities, boss, bossActive);
@@ -493,6 +515,9 @@ function gameLoop() {
 
   ctx.restore();
   savePrevKeys();
+  // BUG FIX v0.7.0: Auto-reset mouse.clicked each frame to prevent
+  // spurious clicks on screen transitions
+  mouse.clicked = false;
   requestAnimationFrame(gameLoop);
 }
 

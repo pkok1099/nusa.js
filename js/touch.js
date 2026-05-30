@@ -1,5 +1,6 @@
 // ============================================================
 // touch.js — On-screen touch controls for mobile play
+// v0.7.0: Added Heavy Attack, Parry, Skill, Interact buttons
 // ============================================================
 
 import { keys } from './input.js';
@@ -9,14 +10,21 @@ import { initAudio } from './audio.js';
 const touchMap = new Map(); // touchId -> controlName
 
 // Control layout configuration (positions are in viewport %)
+// Left side: D-pad (movement)
+// Right side: Action buttons in a diamond layout
 const CONTROLS = {
   // D-pad (left side)
-  left:  { x: 6,  y: 68, w: 10, h: 14, key: 'ArrowLeft',  label: '◀' },
-  right: { x: 22, y: 68, w: 10, h: 14, key: 'ArrowRight', label: '▶' },
-  // Action buttons (right side)
-  jump:   { x: 72, y: 64, w: 12, h: 14, key: 'ArrowUp',    label: '↑' },
-  attack: { x: 86, y: 74, w: 12, h: 14, key: 'Space',      label: '⚔' },
-  dodge:  { x: 72, y: 80, w: 12, h: 14, key: 'ShiftLeft',  label: '↷' },
+  left:  { x: 4,  y: 62, w: 10, h: 14, key: 'ArrowLeft',  label: '◀' },
+  right: { x: 18, y: 62, w: 10, h: 14, key: 'ArrowRight', label: '▶' },
+  // Action buttons (right side) — diamond layout
+  jump:   { x: 78, y: 52, w: 11, h: 11, key: 'ArrowUp',    label: '↑' },
+  attack: { x: 88, y: 64, w: 11, h: 11, key: 'Space',      label: '⚔' },
+  dodge:  { x: 78, y: 76, w: 11, h: 11, key: 'ShiftLeft',  label: '↷' },
+  // New souls-like action buttons
+  heavy:  { x: 68, y: 64, w: 11, h: 11, key: 'KeyF',       label: '💥' },
+  parry:  { x: 88, y: 52, w: 11, h: 11, key: 'KeyR',       label: '🛡' },
+  skill:  { x: 68, y: 76, w: 11, h: 11, key: 'KeyQ',       label: '⚡' },
+  interact:{ x: 4, y: 50, w: 10, h: 10, key: 'KeyE',       label: 'E' },
 };
 
 let touchControlsEnabled = false;
@@ -44,16 +52,19 @@ function createTouchOverlay() {
     btn.id = `touch-${name}`;
     btn.dataset.control = name;
     btn.textContent = ctrl.label;
+    // Smaller buttons for heavy/parry/skill to fit on screen
+    const isSmallBtn = ['heavy', 'parry', 'skill', 'interact'].includes(name);
+    const fontSize = isSmallBtn ? '18px' : '24px';
     btn.style.cssText = `
       position: absolute;
       left: ${ctrl.x}%; top: ${ctrl.y}%;
       width: ${ctrl.w}%; height: ${ctrl.h}%;
       display: flex; align-items: center; justify-content: center;
-      background: rgba(212, 175, 55, 0.15);
-      border: 2px solid rgba(212, 175, 55, 0.3);
+      background: rgba(212, 175, 55, 0.12);
+      border: 2px solid rgba(212, 175, 55, 0.25);
       border-radius: 12px;
-      color: rgba(212, 175, 55, 0.6);
-      font-size: 24px;
+      color: rgba(212, 175, 55, 0.5);
+      font-size: ${fontSize};
       font-weight: bold;
       pointer-events: auto;
       touch-action: none;
@@ -96,9 +107,9 @@ function highlightButton(name, active) {
     btn.style.borderColor = 'rgba(212, 175, 55, 0.7)';
     btn.style.color = 'rgba(212, 175, 55, 0.9)';
   } else {
-    btn.style.background = 'rgba(212, 175, 55, 0.15)';
-    btn.style.borderColor = 'rgba(212, 175, 55, 0.3)';
-    btn.style.color = 'rgba(212, 175, 55, 0.6)';
+    btn.style.background = 'rgba(212, 175, 55, 0.12)';
+    btn.style.borderColor = 'rgba(212, 175, 55, 0.25)';
+    btn.style.color = 'rgba(212, 175, 55, 0.5)';
   }
 }
 

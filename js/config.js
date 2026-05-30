@@ -194,3 +194,44 @@ export const WATER_SPEED_MULT = 0.6;
 
 // Buff system
 export const MAX_ACTIVE_BUFFS = 3;
+
+// ---- SOULS-LIKE SYSTEM v0.7.0 ----
+// Estus Flask (healing item that refills at checkpoints)
+export const ESTUS_MAX = 5;           // Max estus charges
+export const ESTUS_HEAL_AMOUNT = 50;  // HP healed per estus use
+
+// Bonfire/Checkpoint healing
+export const BONFIRE_HEAL_DURATION = 40; // frames for bonfire heal animation
+
+// Death penalty (souls-like: lose currency on death)
+export const DEATH_RUPIAH_LOSS_PCT = 0.30; // Lose 30% of Rupiah
+export const DEATH_RUPIAH_RECOVERY = 0.50;  // Can recover 50% of lost Rupiah if reaching bloodstain
+
+// Stamina tuning (souls-like: stamina is crucial)
+export const STAMINA_REGEN_DELAY = 30;      // Frames before stamina starts regenerating
+export const STAMINA_REGEN_RATE = 0.6;      // Stamina per frame while regenerating
+export const STAMINA_REGEN_RATE_FAST = 1.2; // Stamina per frame when not in combat
+export const STAMINA_JUMP_COST = 8;         // Stamina cost for jumping
+
+// Dodge i-frames (souls-like: generous i-frames during dodge roll)
+export const DODGE_I_FRAMES = 15;    // Total invincibility frames during dodge
+export const DODGE_I_FRAME_START = 2; // Frame of dodge when i-frames begin
+
+// Parry timing (souls-like: strict but rewarding parry window)
+export const PARRY_ACTIVE_WINDOW = 8;  // Active parry frames (generous)
+export const PARRY_RECOVERY = 10;       // Recovery frames after parry (vulnerable)
+export const PARRY_STAMINA_REFUND = 10; // Stamina refunded on successful parry
+
+// Backstab bonus (souls-like: attack from behind deals massive damage)
+export const BACKSTAB_ANGLE = 0.5;    // Must be behind enemy (facing away from player)
+export const BACKSTAB_DAMAGE_MULT = 3.0; // 3x damage on backstab
+
+// Posture break bonus damage
+export const POSTURE_BREAK_DAMAGE_MULT = 2.0; // Damage multiplier on staggered enemies
+
+// Combat feel
+export const HIT_STOP_HEAVY = 8;    // Hit stop frames for heavy attacks
+export const HIT_STOP_PARRY = 12;   // Hit stop frames for parry
+export const SCREEN_SHAKE_LIGHT = 2;
+export const SCREEN_SHAKE_HEAVY = 5;
+export const SCREEN_SHAKE_CRIT = 8;

@@ -35,8 +35,9 @@ export function updateBoss(boss, bossActive, hitStopTimer, player) {
   }
 
   boss.prevY = boss.y;
-  boss.vy += GRAVITY;
-  if (boss.vy > MAX_FALL) boss.vy = MAX_FALL;
+  // NOTE: Gravity is NOT applied here because applyBossGravity()
+  // is called in ALL code paths below (recovery, telegraph, chase).
+  // Adding it here would cause double gravity during recovery/telegraph.
 
   // Phase
   const hpPct = boss.hp / boss.maxHp;
@@ -87,6 +88,10 @@ export function updateBoss(boss, bossActive, hitStopTimer, player) {
     applyBossGravity(boss);
     return;
   }
+
+  // Apply gravity for chase state
+  boss.vy += GRAVITY;
+  if (boss.vy > MAX_FALL) boss.vy = MAX_FALL;
 
   // Chase player
   const dx = (player.x + player.w / 2) - (boss.x + boss.w / 2);
@@ -301,6 +306,26 @@ function chooseRaksasaTerakhirAttack(boss, absDx) {
   }
 }
 
+// Step-based charge movement that respects walls (prevents wall-skip)
+function stepCharge(boss, totalDist, stepSize) {
+  const dir = totalDist > 0 ? 1 : -1;
+  const absDist = Math.abs(totalDist);
+  let moved = 0;
+  while (moved < absDist) {
+    const step = Math.min(stepSize, absDist - moved);
+    boss.x += dir * step;
+    moved += step;
+    const cols = tileCollision(boss.x, boss.y, boss.w, boss.h, boss.prevY);
+    let blocked = false;
+    cols.forEach(c => {
+      if (c.oneway) return;
+      if (dir > 0) { boss.x = c.x - boss.w; blocked = true; }
+      else { boss.x = c.x + c.w; blocked = true; }
+    });
+    if (blocked) break;
+  }
+}
+
 // ---- Execute boss attack ----
 export function executeBossAttack(boss, player) {
   const dx = (player.x + player.w / 2) - (boss.x + boss.w / 2);
@@ -350,20 +375,11 @@ export function executeBossAttack(boss, player) {
       break;
 
     case 'charge':
-      // BUG FIX v0.6.2: Fix charge distance calculation.
-      // Old formula Math.min(facing * speed * frames, maxDist) was wrong
-      // because facing*30 < maxDist always, so cap never took effect.
+      // Step-based charge to prevent wall-skip
       {
-        const chargeDist = boss.facing * 150; // charge ~5 tiles
+        const chargeDist = boss.facing * 150;
+        stepCharge(boss, chargeDist, 8);
         boss.vx = boss.facing * 6;
-        boss.x += chargeDist;
-        // Collision check after charge
-        const chargeCols = tileCollision(boss.x, boss.y, boss.w, boss.h, boss.prevY);
-        chargeCols.forEach(c => {
-          if (c.oneway) return;
-          if (boss.vx > 0) boss.x = c.x - boss.w;
-          else boss.x = c.x + c.w;
-        });
         if (checkOverlap(player, boss) && player.invincible <= 0)
           damagePlayer(Math.floor(20 * dmgMult));
         spawnParticle(boss.x + boss.w / 2, boss.y + boss.h, C.stoneDark, 10, 3);
@@ -382,15 +398,9 @@ export function executeBossAttack(boss, player) {
 
     // Raja Hutan attacks
     case 'pounce': {
-      // BUG FIX v0.6.2: Cap pounce distance and add collision check
-      const pounceDist = boss.facing * 120; // pounce ~4 tiles
-      boss.x += pounceDist;
-      const pounceCols = tileCollision(boss.x, boss.y, boss.w, boss.h, boss.prevY);
-      pounceCols.forEach(c => {
-        if (c.oneway) return;
-        if (boss.facing > 0) boss.x = c.x - boss.w;
-        else boss.x = c.x + c.w;
-      });
+      // Step-based pounce to prevent wall-skip
+      const pounceDist = boss.facing * 120;
+      stepCharge(boss, pounceDist, 8);
       if (checkOverlap(player, boss) && player.invincible <= 0)
         damagePlayer(Math.floor(20 * dmgMult));
       spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 2, C.grassLight, 10, 4);
@@ -467,16 +477,10 @@ export function executeBossAttack(boss, player) {
       break;
 
     case 'fireCharge': {
-      // BUG FIX v0.6.2: Cap charge distance and add collision check
-      const fcDist = boss.facing * 180; // fire charge ~6 tiles
+      // Step-based fire charge to prevent wall-skip
+      const fcDist = boss.facing * 180;
+      stepCharge(boss, fcDist, 8);
       boss.vx = boss.facing * 8;
-      boss.x += fcDist;
-      const fcCols = tileCollision(boss.x, boss.y, boss.w, boss.h, boss.prevY);
-      fcCols.forEach(c => {
-        if (c.oneway) return;
-        if (boss.vx > 0) boss.x = c.x - boss.w;
-        else boss.x = c.x + c.w;
-      });
       if (checkOverlap(player, boss) && player.invincible <= 0)
         damagePlayer(Math.floor(25 * dmgMult));
       spawnParticle(boss.x + boss.w / 2, boss.y + boss.h, C.lava, 15, 5);
@@ -563,16 +567,10 @@ export function executeBossAttack(boss, player) {
       break;
 
     case 'shieldBash': {
-      // BUG FIX v0.6.2: Cap shield bash distance and add collision check
-      const sbDist = boss.facing * 140; // shield bash ~4.5 tiles
+      // Step-based shield bash to prevent wall-skip
+      const sbDist = boss.facing * 140;
+      stepCharge(boss, sbDist, 8);
       boss.vx = boss.facing * 7;
-      boss.x += sbDist;
-      const sbCols = tileCollision(boss.x, boss.y, boss.w, boss.h, boss.prevY);
-      sbCols.forEach(c => {
-        if (c.oneway) return;
-        if (boss.vx > 0) boss.x = c.x - boss.w;
-        else boss.x = c.x + c.w;
-      });
       if (checkOverlap(player, boss) && player.invincible <= 0) {
         damagePlayer(Math.floor(18 * dmgMult));
         if (player.stunTimer !== undefined) player.stunTimer = 30;

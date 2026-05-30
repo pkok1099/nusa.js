@@ -772,12 +772,21 @@ export function drawHUD(boss, bossActive, deathCount) {
   drawText(`Artefak: ${player.artifacts}/5`, GAME_W - 50, 22, 11, C.gold, 'center');
 
   // Bottom HUD
-  drawRect(8, GAME_H - 36, 400, 28, '#00000080', 6);
-  drawText(`Ramuan: ${healthPotions}`, 16, GAME_H - 22, 11, C.green, 'left');
+  drawRect(8, GAME_H - 36, 460, 28, '#00000080', 6);
+  // Souls-like v0.7.0: Estus Flask instead of potion count
+  const estusColor = player.estus > 0 ? C.green : C.red + '80';
+  drawText(`Estus: ${player.estus}/${player.estusMax}`, 16, GAME_H - 22, 11, estusColor, 'left');
   drawText(`Kunci: ${player.keys}`, 110, GAME_H - 22, 11, C.gold, 'left');
   drawText(`Rupiah: ${player.rupiah}`, 180, GAME_H - 22, 11, C.goldLight, 'left');
   drawText(`Mati: ${deathCount}`, 280, GAME_H - 22, 11, C.red + '80', 'left');
-  drawText(`ATK:${stats.attack} DEF:${stats.defense}`, 340, GAME_H - 22, 9, C.gold + '60', 'left');
+  // Show stamina regen state
+  const staminaState = player.inCombat ? '⚔' : '≋';
+  drawText(`ATK:${stats.attack} DEF:${stats.defense} ${staminaState}`, 340, GAME_H - 22, 9, C.gold + '60', 'left');
+  // Bloodstain indicator
+  if (player.bloodstain) {
+    const bloodAlpha = Math.sin(gameTime * 0.1) * 0.3 + 0.7;
+    drawText(`💀 +${player.bloodstain.rupiah} Rupiah`, GAME_W / 2, GAME_H - 48, 9, C.red + Math.floor(bloodAlpha * 200).toString(16).padStart(2, '0'), 'center');
+  }
 
   // Skill cooldown
   drawRect(GAME_W / 2 - 40, GAME_H - 36, 80, 28, '#00000080', 6);
@@ -798,12 +807,15 @@ export function drawHUD(boss, bossActive, deathCount) {
     buffX += 44;
   });
 
-  // Status effects
+  // Status effects — stack vertically to avoid overlap
+  let statusY = 82;
   if (player.poisonTimer > 0) {
-    drawText('RACUN', GAME_W / 2, 82, 9, C.green, 'center');
+    drawText('RACUN', GAME_W / 2, statusY, 9, C.green, 'center');
+    statusY += 14;
   }
   if (player.slowTimer > 0) {
-    drawText('PELAN', GAME_W / 2, 82, 9, C.cyan, 'center');
+    drawText('PELAN', GAME_W / 2, statusY, 9, C.cyan, 'center');
+    statusY += 14;
   }
 
   // Boss HP
@@ -823,7 +835,7 @@ export function drawHUD(boss, bossActive, deathCount) {
 
   const stage = STAGES[currentStageId] || STAGES[0];
   drawText(stage.name, GAME_W / 2, 22, 11, C.gold + '60', 'center');
-  drawText('WASD:Gerak  SPACE:Serang  F:Heavy  R:Parry  SHIFT:Dodge  Q:Skill  E:Interaksi  TAB:Inventori', GAME_W / 2, GAME_H - 6, 7, C.textDim, 'center');
+  drawText('WASD:Gerak  SPACE:Serang  F:Heavy  R:Parry  SHIFT:Dodge  Q:Skill  E:Estus/Interaksi  TAB:Inventori', GAME_W / 2, GAME_H - 6, 7, C.textDim, 'center');
 
   // Save indicator
   if (saveIndicatorTimer > 0) {
@@ -836,6 +848,30 @@ export function drawHUD(boss, bossActive, deathCount) {
 // ---- MINI-MAP ----
 let miniMapTileMap = null;
 export function setMiniMapData(tMap) { miniMapTileMap = tMap; }
+
+// ---- BLOODSTAIN (Souls-like v0.7.0) ----
+export function drawBloodstain() {
+  if (!player.bloodstain) return;
+  const ctx = getCtx();
+  const bs = player.bloodstain;
+  const bx = bs.x - camera.x;
+  const by = bs.y - camera.y;
+  // Pulsing blood stain on the ground
+  const pulse = Math.sin(gameTime * 0.08) * 0.3 + 0.7;
+  ctx.fillStyle = `rgba(139, 0, 0, ${pulse * 0.6})`;
+  ctx.beginPath();
+  ctx.arc(bx + player.w / 2, by + player.h / 2, 12 + Math.sin(gameTime * 0.1) * 3, 0, Math.PI * 2);
+  ctx.fill();
+  // Glowing outline
+  ctx.strokeStyle = `rgba(255, 68, 68, ${pulse * 0.4})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(bx + player.w / 2, by + player.h / 2, 16 + Math.sin(gameTime * 0.1) * 4, 0, Math.PI * 2);
+  ctx.stroke();
+  // Rupiah icon floating above
+  const floatY = Math.sin(gameTime * 0.05) * 4;
+  drawText(`${bs.rupiah}R`, bx + player.w / 2, by - 10 + floatY, 10, C.red, 'center');
+}
 
 export function drawMiniMap(tileMap, entities, boss, bossActive) {
   if (!tileMap || tileMap.length === 0) return;

@@ -94,6 +94,11 @@ export function updateEnemies(entities, hitStopTimer, player) {
 
     e.animTimer++;
     if (e.animTimer > 10) { e.animTimer = 0; e.animFrame = (e.animFrame + 1) % 2; }
+
+    // Contact damage — souls-like: touching enemies hurts
+    if (checkOverlap(player, e) && player.invincible <= 0 && !player.dodging) {
+      damagePlayer(e.contactDmg || 5);
+    }
   });
 }
 
@@ -373,9 +378,9 @@ function updateIkanPedang(e, player) {
 // ---- ubur_ubur: stationary, creates electric field, stuns on contact ----
 function updateUburUbur(e, player) {
   e.vx = 0; // stationary
-
-  // Small bob movement
-  e.x += Math.sin(e.animTimer * 0.05) * 0.3;
+  // Small bob movement - use vx instead of direct x modification
+  // so the main collision loop handles it properly
+  e.vx = Math.sin(e.animTimer * 0.05) * 0.3;
 
   // Electric field damage + stun
   const dist = distToPlayer(e, player);
