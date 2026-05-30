@@ -153,6 +153,10 @@ function generateLevel1() {
 }
 
 // Stage 2: Gunung Bromo (lava pools, rocks, red/orange theme)
+// NOTE: Lava (tile 3) is SOLID — must be at ground level (H-3) only.
+//       Placing lava at H-4 creates impassable walls because the player
+//       hitbox (36px) extends into that row. Use tile 8 (decoration) for
+//       visual lava glow above ground level.
 function generateLevel2() {
   const W = 100, H = 24;
   const map = [];
@@ -165,31 +169,36 @@ function generateLevel2() {
     }
   }
 
-  // Section 1: Mountain base
+  // Section 1: Mountain base — open area with small lava pool
   fillRect(map, 0, H - 3, 20, 2, 1);
   fillRect(map, 4, H - 5, 3, 1, 2);
   fillRect(map, 10, H - 7, 4, 1, 2);
   fillRect(map, 16, H - 5, 3, 1, 2);
-  // Lava pool
-  fillRect(map, 6, H - 3, 4, 1, 3);  // lava at ground level
+  // Ground-level lava pool (2 tiles wide — easy to jump over)
+  fillRect(map, 8, H - 3, 2, 1, 3);
 
-  // Section 2: Lava caves
+  // Section 2: Lava caves — narrow lava gaps between walkable ground
   fillRect(map, 20, H - 3, 22, 2, 1);
-  fillRect(map, 24, H - 5, 3, 1, 2);
-  fillRect(map, 28, H - 4, 5, 1, 3);  // lava pool
-  fillRect(map, 34, H - 7, 3, 1, 2);
-  fillRect(map, 38, H - 9, 3, 1, 2);
-  fillRect(map, 36, H - 4, 3, 1, 3);  // lava pool
-  // Rock formations
-  fillRect(map, 22, H - 6, 2, 3, 1);
-  fillRect(map, 30, H - 8, 2, 5, 1);
+  // Platforms above
+  fillRect(map, 24, H - 6, 3, 1, 2);
+  fillRect(map, 34, H - 8, 3, 1, 2);
+  fillRect(map, 38, H - 10, 3, 1, 2);
+  // Ground-level lava gaps (2 tiles wide — jumpable)
+  fillRect(map, 28, H - 3, 2, 1, 3);
+  fillRect(map, 37, H - 3, 2, 1, 3);
+  // Small rock pillars (1 tile wide — player can walk around)
+  map[H - 4][22] = 1;
+  map[H - 4][31] = 1;
 
-  // Section 3: Volcano ascent
+  // Section 3: Volcano ascent — platforms climbing upward
   fillRect(map, 42, H - 3, 20, 2, 1);
-  for (let i = 0; i < 6; i++) fillRect(map, 44 + i, H - 4 - i, 2, 1, 1);
-  fillRect(map, 50, H - 10, 4, 1, 2);
-  fillRect(map, 55, H - 7, 3, 1, 2);
-  fillRect(map, 48, H - 4, 5, 1, 3);  // lava
+  // Stepping-stone platforms (one-way, can jump between them)
+  fillRect(map, 44, H - 5, 3, 1, 2);
+  fillRect(map, 48, H - 7, 3, 1, 2);
+  fillRect(map, 52, H - 9, 3, 1, 2);
+  fillRect(map, 56, H - 7, 3, 1, 2);
+  // Small lava pool at ground level
+  fillRect(map, 50, H - 3, 2, 1, 3);
 
   // Section 4: Puzzle area
   fillRect(map, 62, H - 3, 18, 2, 1);
@@ -198,15 +207,17 @@ function generateLevel2() {
   fillRect(map, 66, H - 6, 3, 1, 2);
   fillRect(map, 70, H - 8, 3, 1, 2);
   fillRect(map, 74, H - 5, 3, 1, 2);
-  fillRect(map, 68, H - 4, 4, 1, 3);  // lava
+  // Small lava gap (2 tiles — jumpable)
+  fillRect(map, 70, H - 3, 2, 1, 3);
 
-  // Section 5: Boss arena (crater)
+  // Section 5: Boss arena (crater) — open flat area
   fillRect(map, 80, H - 3, 20, 2, 1);
   fillRect(map, 80, H - 3, 1, 10, 1);
   fillRect(map, 99, H - 3, 1, 10, 1);
   fillRect(map, 84, H - 7, 2, 1, 2);
   fillRect(map, 92, H - 7, 2, 1, 2);
-  fillRect(map, 86, H - 4, 8, 1, 3);  // lava floor
+  // Small decorative lava pool at ground level (not blocking)
+  fillRect(map, 87, H - 3, 3, 1, 3);
 
   // Checkpoints
   map[H - 4][20] = 9;
