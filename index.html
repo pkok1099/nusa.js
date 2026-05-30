@@ -45,7 +45,7 @@ canvas{display:block;margin:auto;image-rendering:pixelated}
 <!-- Cache-bust: append version to prevent stale cached modules -->
 <script>
   // Inject version into all module URLs to bust browser cache
-  window.__nusaVersion = '0.7.1';
+  window.__nusaVersion = '0.7.2';
   var _origFetch = window.fetch;
   window.fetch = function(url, opts) {
     if (typeof url === 'string' && url.indexOf('/js/') >= 0 && url.indexOf('?v=') < 0 && url.indexOf('t=') < 0) {
@@ -56,12 +56,12 @@ canvas{display:block;margin:auto;image-rendering:pixelated}
 </script>
 
 <!-- ES Module Entry Point — browser native, no build tool needed -->
-<script type="module" src="js/game.js?v=0.7.1"></script>
+<script type="module" src="js/game.js?v=0.7.2"></script>
 
 <!-- Touch controls module — initializes on mobile devices -->
 <script type="module">
   try {
-    const { initTouchControls } = await import('./js/touch.js?v=0.7.1');
+    const { initTouchControls } = await import('./js/touch.js?v=0.7.2');
     initTouchControls();
   } catch(e) {
     console.warn('Touch controls gagal dimuat:', e.message);

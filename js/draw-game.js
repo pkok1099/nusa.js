@@ -1319,7 +1319,11 @@ export function drawStageSelect(unlockedStages) {
   }
 
   // Stage cards
-  STAGES.forEach((stage, i) => {
+  // BUG FIX v0.7.1: Use for-loop instead of forEach so return exits drawStageSelect.
+  // Previously, return inside forEach only exited the callback, never reaching game.js.
+  let stageResult = null;
+  for (let i = 0; i < STAGES.length; i++) {
+    const stage = STAGES[i];
     const cx = 60 + (i % 3) * 290;
     const cy = 100 + Math.floor(i / 3) * 180;
     const isUnlocked = unlockedStages[i];
@@ -1340,7 +1344,8 @@ export function drawStageSelect(unlockedStages) {
       ctx.fillRect(cx + 4, cy + 130, 262, 26);
 
       if (isSelected && mouse.clicked) {
-        return { action: 'select', stageId: i };
+        stageResult = { action: 'select', stageId: i };
+        break;
       }
     } else {
       drawText('TERKUNCI', cx + 135, cy + 60, 20, C.textDim, 'center');
@@ -1349,7 +1354,7 @@ export function drawStageSelect(unlockedStages) {
       drawRect(cx + 125, cy + 105, 20, 20, C.stoneDark + '60');
       drawRect(cx + 128, cy + 115, 14, 10, C.stone + '40');
     }
-  });
+  }
 
   // Back button
   drawRect(GAME_W / 2 - 60, GAME_H - 45, 120, 30, C.gold + '15', 6);
@@ -1360,7 +1365,7 @@ export function drawStageSelect(unlockedStages) {
     return { action: 'menu' };
   }
 
-  return null;
+  return stageResult;
 }
 
 // ---- MENU ----
