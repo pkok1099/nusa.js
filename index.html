@@ -56,7 +56,7 @@ canvas{display:block;margin:auto;image-rendering:pixelated}
 <script>
 (function() {
   var moduleLoaded = false;
-  var errorInfo = '';
+  var moduleError = null;
 
   // Detect file:// protocol early
   if (location.protocol === 'file:') {
@@ -66,60 +66,67 @@ canvas{display:block;margin:auto;image-rendering:pixelated}
     return;
   }
 
-  // Listen for script load errors
+  // Only listen for SCRIPT TAG load failures (not runtime errors inside modules)
   window.addEventListener('error', function(e) {
-    // Handle script element errors
+    // Only handle script element load failures (network/CORS issues)
     if (e.target && e.target.tagName === 'SCRIPT') {
       var src = e.target.src || '(inline)';
-      errorInfo = 'Script gagal: ' + src;
-      console.error('[NUSANTARA] Module load error:', src);
-      if (!moduleLoaded) {
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('loadError').style.display = 'block';
-        document.getElementById('errorDetail').textContent = errorInfo;
-      }
+      moduleError = 'Script gagal dimuat: ' + src;
+      console.error('[NUSANTARA] Script load error:', src);
+      showError();
     }
-    // Handle runtime JS errors in module code
-    if (!e.target && e.message) {
-      errorInfo = 'Runtime error: ' + e.message + ' (' + (e.filename || '') + ':' + (e.lineno || '') + ')';
-      console.error('[NUSANTARA] Runtime error:', e.message);
-      if (!moduleLoaded) {
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('loadError').style.display = 'block';
-        document.getElementById('errorDetail').textContent = errorInfo;
-      }
-    }
+    // Do NOT show error screen for runtime JS errors inside modules.
+    // Runtime errors (e.g. undefined variable) should be visible in Console (F12)
+    // but should NOT replace the game screen, because the game may still
+    // be partially functional. The game.js module itself will handle
+    // its own error boundaries.
   }, true);
 
-  // Catch unhandled promise rejections (common with module import failures)
+  // Catch unhandled promise rejections ONLY for module import failures
   window.addEventListener('unhandledrejection', function(e) {
-    var reason = e.reason ? (e.reason.message || String(e.reason)) : 'Unknown';
-    errorInfo = 'Module error: ' + reason;
-    console.error('[NUSANTARA] Unhandled rejection:', reason);
-    if (!moduleLoaded) {
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('loadError').style.display = 'block';
-      document.getElementById('errorDetail').textContent = errorInfo;
+    var reason = e.reason;
+    var msg = reason ? (reason.message || String(reason)) : 'Unknown';
+    // Only treat as fatal if it's clearly a module loading error
+    if (msg.indexOf('import') >= 0 || msg.indexOf('module') >= 0 ||
+        msg.indexOf('Failed to fetch') >= 0 || msg.indexOf('CORS') >= 0 ||
+        (reason && reason instanceof TypeError && msg.indexOf('resolve') >= 0)) {
+      moduleError = 'Module import gagal: ' + msg;
+      console.error('[NUSANTARA] Module import error:', msg);
+      showError();
     }
+    // Other unhandled rejections are not fatal — just log them
+    console.warn('[NUSANTARA] Unhandled promise:', msg);
   });
+
+  function showError() {
+    if (moduleLoaded) return;
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('loadError').style.display = 'block';
+    var detail = moduleError || 'Unknown error';
+    detail += ' | URL: ' + location.href;
+    document.getElementById('errorDetail').textContent = detail;
+  }
 
   // Mark as loaded when game.js runs successfully
   window.__nusaLoaded = function() {
     moduleLoaded = true;
+    // Hide loading and error screens
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('loadError').style.display = 'none';
   };
 
-  // Timeout — if game hasn't loaded in 10 seconds, show diagnostics
+  // Timeout — if game hasn't loaded in 15 seconds, show diagnostics
   setTimeout(function() {
     if (!moduleLoaded) {
-      var detail = 'Timeout setelah 10 detik.';
-      if (errorInfo) detail += ' ' + errorInfo;
-      else detail += ' Tidak ada error tertangkap — cek Console (F12) untuk detail.';
-      detail += ' URL: ' + location.href;
+      var detail = 'Timeout setelah 15 detik.';
+      if (moduleError) detail += ' ' + moduleError;
+      else detail += ' Tidak ada error tertangkap — buka Console (F12) untuk detail.';
+      detail += ' | URL: ' + location.href;
       document.getElementById('loading').style.display = 'none';
       document.getElementById('loadError').style.display = 'block';
       document.getElementById('errorDetail').textContent = detail;
     }
-  }, 10000);
+  }, 15000);
 })();
 </script>
 </body>
