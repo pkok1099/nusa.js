@@ -1,11 +1,13 @@
 {
   "name": "nusa-js",
-  "version": "0.4.0",
+  "version": "0.5.0",
+  "type": "module",
   "description": "NUSANTARA: Warisan Terakhir — Souls-like Adventure RPG + Puzzle bertema mitologi Nusantara",
   "main": "index.html",
   "scripts": {
-    "start": "npx serve .",
-    "dev": "npx serve . -l 8000"
+    "dev": "npx serve . -l 8000",
+    "build": "node build.js",
+    "start": "npx serve ."
   },
   "keywords": [
     "game",
@@ -23,5 +25,9 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/nusa-js/nusa.js.git"
+  },
+  "devDependencies": {
+    "rollup": "^4.60.4",
+    "@rollup/plugin-node-resolve": "^16.0.0"
   }
 }
