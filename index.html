@@ -18,6 +18,2306 @@ canvas{display:block;margin:auto;image-rendering:pixelated}
 <canvas id="gameCanvas"></canvas>
 <div id="loading">MEMUAT NUSANTARA...<div class="sub">Harap tunggu sebentar</div></div>
 </div>
-<script type="module" src="js/game.js"></script>
+<script>
+// ============================================================
+// config.js — Game constants and color palette
+// ============================================================
+
+// Core game dimensions
+const GAME_W = 960;
+const GAME_H = 540;
+const TILE = 32;
+const LEVEL_H = 20;
+
+// Physics
+const GRAVITY = 0.55;
+const MAX_FALL = 12;
+
+// Player movement
+const PLAYER_SPEED = 3.2;
+const JUMP_FORCE = -10.5;
+const DODGE_SPEED = 8;
+const DODGE_DURATION = 12;
+
+// Light attack combo system
+const ATTACK_DURATION = 12;
+const ATTACK_RANGE = 50;
+const COMBO_WINDOW = 15;
+const COMBO_1_DAMAGE = 15;
+const COMBO_2_DAMAGE = 18;
+const COMBO_3_DAMAGE = 25;
+const COMBO_1_DURATION = 12;
+const COMBO_2_DURATION = 14;
+const COMBO_3_DURATION = 18;
+
+// Heavy attack
+const HEAVY_ATTACK_DAMAGE = 40;
+const HEAVY_ATTACK_WINDUP = 20;
+const HEAVY_ATTACK_DURATION = 30;
+const HEAVY_ATTACK_ENERGY = 25;
+
+// Parry
+const PARRY_WINDOW = 6;
+const PARRY_DURATION = 12;
+const PARRY_ENERGY = 15;
+const STAGGER_DURATION = 30;
+const STAGGER_DAMAGE_MULT = 1.5;
+
+// Boss stagger / posture
+const BOSS_STAGGER_DURATION = 60;
+const BOSS_MAX_POSTURE = 100;
+const BOSS_POSTURE_RECOVERY = 0.3;
+
+// Jump improvements
+const COYOTE_TIME = 6;
+const JUMP_BUFFER_TIME = 8;
+
+// Stamina system
+const MAX_STAMINA = 100;
+const STAMINA_REGEN = 0.8;
+const STAMINA_DODGE_COST = 25;
+const STAMINA_LIGHT_COST = 10;
+const STAMINA_HEAVY_COST = 25;
+const STAMINA_PARRY_COST = 15;
+
+// Healing (estus-style)
+const HEAL_ANIMATION_DURATION = 30;
+const HEAL_TICKS = 20;
+const HEAL_AMOUNT = 40;
+
+// Hit-stop / juice
+const HIT_STOP_FRAMES = 3;
+
+// Boss telegraph
+const BOSS_RECOVERY_FRAMES = 40;
+
+// Skill & misc
+const SKILL_DAMAGE = 40;
+const INV_FRAMES = 30;
+
+// Derived
+const GROUND_Y = (LEVEL_H - 3) * TILE;
+
+// ---- COLORS ----
+const C = {
+  bg: '#0A0A0A', gold: '#D4AF37', goldLight: '#F5E6A3', goldDark: '#8B6914',
+  text: '#E8D5A3', textDim: '#E8D5A366', red: '#FF4444', redDark: '#8B0000',
+  green: '#44FF44', blue: '#4488FF', cyan: '#00CED1', orange: '#FF6600',
+  stone: '#8B8682', stoneLight: '#A09A94', stoneDark: '#6B6662',
+  grass: '#2D5A1E', grassLight: '#3D7A2E', water: '#1E5A8E',
+  lava: '#CC3300', wood: '#6B4226', sky: '#1A0A2E',
+  stamina: '#CCAA00', staminaDark: '#554400',
+  parryGold: '#FFD700',
+};
+
+// ============================================================
+// audio.js — Sound system using Web Audio API
+// ============================================================
+
+let audioCtx = null;
+
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playSound(type) {
+  if (!audioCtx) return;
+  try {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    const t = audioCtx.currentTime;
+    switch (type) {
+      case 'hit':
+        osc.type = 'sawtooth'; osc.frequency.setValueAtTime(200, t);
+        osc.frequency.exponentialRampToValueAtTime(80, t + 0.1);
+        gain.gain.setValueAtTime(0.15, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+        osc.start(t); osc.stop(t + 0.15); break;
+      case 'attack':
+        osc.type = 'square'; osc.frequency.setValueAtTime(300, t);
+        osc.frequency.exponentialRampToValueAtTime(150, t + 0.08);
+        gain.gain.setValueAtTime(0.1, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+        osc.start(t); osc.stop(t + 0.1); break;
+      case 'heavyAttack':
+        osc.type = 'sawtooth'; osc.frequency.setValueAtTime(150, t);
+        osc.frequency.exponentialRampToValueAtTime(80, t + 0.2);
+        gain.gain.setValueAtTime(0.18, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+        osc.start(t); osc.stop(t + 0.25); break;
+      case 'parry':
+        osc.type = 'triangle'; osc.frequency.setValueAtTime(800, t);
+        osc.frequency.exponentialRampToValueAtTime(1200, t + 0.1);
+        gain.gain.setValueAtTime(0.15, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+        osc.start(t); osc.stop(t + 0.2); break;
+      case 'parrySuccess':
+        osc.type = 'sine'; osc.frequency.setValueAtTime(600, t);
+        osc.frequency.setValueAtTime(900, t + 0.05);
+        osc.frequency.setValueAtTime(1200, t + 0.1);
+        gain.gain.setValueAtTime(0.2, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+        osc.start(t); osc.stop(t + 0.3); break;
+      case 'stagger':
+        osc.type = 'square'; osc.frequency.setValueAtTime(100, t);
+        osc.frequency.exponentialRampToValueAtTime(50, t + 0.3);
+        gain.gain.setValueAtTime(0.15, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+        osc.start(t); osc.stop(t + 0.4); break;
+      case 'jump':
+        osc.type = 'sine'; osc.frequency.setValueAtTime(250, t);
+        osc.frequency.exponentialRampToValueAtTime(500, t + 0.12);
+        gain.gain.setValueAtTime(0.08, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+        osc.start(t); osc.stop(t + 0.15); break;
+      case 'dodge':
+        osc.type = 'sine'; osc.frequency.setValueAtTime(400, t);
+        osc.frequency.exponentialRampToValueAtTime(200, t + 0.1);
+        gain.gain.setValueAtTime(0.06, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+        osc.start(t); osc.stop(t + 0.12); break;
+      case 'pickup':
+        osc.type = 'sine'; osc.frequency.setValueAtTime(523, t);
+        osc.frequency.setValueAtTime(659, t + 0.08);
+        osc.frequency.setValueAtTime(784, t + 0.16);
+        gain.gain.setValueAtTime(0.12, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+        osc.start(t); osc.stop(t + 0.3); break;
+      case 'puzzle':
+        osc.type = 'sine'; osc.frequency.setValueAtTime(440, t);
+        osc.frequency.setValueAtTime(554, t + 0.1);
+        osc.frequency.setValueAtTime(659, t + 0.2);
+        osc.frequency.setValueAtTime(880, t + 0.3);
+        gain.gain.setValueAtTime(0.1, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+        osc.start(t); osc.stop(t + 0.5); break;
+      case 'damage':
+        osc.type = 'sawtooth'; osc.frequency.setValueAtTime(150, t);
+        osc.frequency.exponentialRampToValueAtTime(50, t + 0.2);
+        gain.gain.setValueAtTime(0.2, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+        osc.start(t); osc.stop(t + 0.25); break;
+      case 'boss':
+        osc.type = 'sawtooth'; osc.frequency.setValueAtTime(80, t);
+        osc.frequency.exponentialRampToValueAtTime(40, t + 0.5);
+        gain.gain.setValueAtTime(0.15, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+        osc.start(t); osc.stop(t + 0.6); break;
+      case 'skill':
+        osc.type = 'triangle'; osc.frequency.setValueAtTime(600, t);
+        osc.frequency.exponentialRampToValueAtTime(1200, t + 0.15);
+        gain.gain.setValueAtTime(0.12, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+        osc.start(t); osc.stop(t + 0.3); break;
+      case 'dialog':
+        osc.type = 'sine'; osc.frequency.setValueAtTime(350, t);
+        gain.gain.setValueAtTime(0.04, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+        osc.start(t); osc.stop(t + 0.05); break;
+      case 'checkpoint':
+        osc.type = 'sine'; osc.frequency.setValueAtTime(440, t);
+        osc.frequency.setValueAtTime(660, t + 0.1);
+        osc.frequency.setValueAtTime(880, t + 0.2);
+        gain.gain.setValueAtTime(0.1, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+        osc.start(t); osc.stop(t + 0.4); break;
+      case 'noStamina':
+        osc.type = 'square'; osc.frequency.setValueAtTime(100, t);
+        osc.frequency.setValueAtTime(80, t + 0.05);
+        gain.gain.setValueAtTime(0.08, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+        osc.start(t); osc.stop(t + 0.1); break;
+      case 'heal':
+        osc.type = 'sine'; osc.frequency.setValueAtTime(400, t);
+        osc.frequency.setValueAtTime(500, t + 0.1);
+        osc.frequency.setValueAtTime(600, t + 0.2);
+        gain.gain.setValueAtTime(0.08, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+        osc.start(t); osc.stop(t + 0.3); break;
+    }
+  } catch (e) { /* silent fail */ }
+}
+
+// ============================================================
+// input.js — Keyboard, mouse, and touch input handling
+// ============================================================
+
+const keys = {};
+const prevKeys = {};
+const mouse = { x: 0, y: 0, clicked: false };
+
+function justPressed(code) {
+  return keys[code] && !prevKeys[code];
+}
+
+function savePrevKeys() {
+  for (const k in keys) prevKeys[k] = keys[k];
+}
+
+function setupInput(canvas) {
+  const preventCodes = [
+    'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+    'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyE', 'KeyQ', 'KeyF', 'KeyR',
+    'ShiftLeft', 'ShiftRight', 'Tab', 'Escape', 'Enter',
+  ];
+
+  window.addEventListener('keydown', e => {
+    keys[e.code] = true;
+    if (preventCodes.includes(e.code)) e.preventDefault();
+  });
+
+  window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+  canvas.addEventListener('mousemove', e => {
+    const r = canvas.getBoundingClientRect();
+    mouse.x = (e.clientX - r.left) * (GAME_W / r.width);
+    mouse.y = (e.clientY - r.top) * (GAME_H / r.height);
+  });
+
+  canvas.addEventListener('click', () => {
+    mouse.clicked = true;
+    initAudio();
+  });
+
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    const r = canvas.getBoundingClientRect();
+    mouse.x = (t.clientX - r.left) * (GAME_W / r.width);
+    mouse.y = (t.clientY - r.top) * (GAME_H / r.height);
+    mouse.clicked = true;
+    initAudio();
+    keys['Space'] = true;
+    setTimeout(() => { keys['Space'] = false; }, 100);
+  });
+}
+
+// ============================================================
+// physics.js — Collision detection and tile physics
+// ============================================================
+
+let tileMap = [];
+
+function setTileMap(map) { tileMap = map; }
+function getTileMap() { return tileMap; }
+
+function rectsOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function tileCollision(x, y, w, h, previousY) {
+  if (!tileMap || tileMap.length === 0 || !tileMap[0] || tileMap[0].length === 0) return [];
+  const checks = [];
+  const left = Math.floor(x / TILE);
+  const right = Math.floor((x + w - 1) / TILE);
+  const top = Math.floor(y / TILE);
+  const bottom = Math.floor((y + h - 1) / TILE);
+  for (let ty = top; ty <= bottom; ty++) {
+    for (let tx = left; tx <= right; tx++) {
+      if (ty >= 0 && ty < tileMap.length && tx >= 0 && tx < tileMap[0].length) {
+        const tile = tileMap[ty][tx];
+        if (tile === 1 || tile === 7) {
+          checks.push({ x: tx * TILE, y: ty * TILE, w: TILE, h: TILE, tx, ty });
+        } else if (tile === 2) {
+          const prevBottom = previousY !== undefined ? previousY + h : y + h;
+          const platTop = ty * TILE;
+          if (prevBottom <= platTop + 4 && y + h > platTop) {
+            checks.push({ x: tx * TILE, y: ty * TILE, w: TILE, h: TILE / 2, tx, ty, oneway: true });
+          }
+        }
+      }
+    }
+  }
+  return checks;
+}
+
+function isSolid(tx, ty) {
+  if (!tileMap || tileMap.length === 0) return true;
+  if (ty < 0) return false;
+  if (ty >= tileMap.length || tx < 0 || tx >= tileMap[0].length) return true;
+  const t = tileMap[ty][tx];
+  return t === 1 || t === 7;
+}
+
+// ============================================================
+// particles.js — Particle and floating text system
+// ============================================================
+
+let particles = [];
+let floatingTexts = [];
+
+function spawnParticle(x, y, color, count = 5, speed = 3, life = 30) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const spd = Math.random() * speed + 0.5;
+    particles.push({
+      x, y, vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd - 1,
+      life, maxLife: life, color, size: Math.random() * 3 + 1,
+    });
+  }
+}
+
+function spawnFloatingText(x, y, text, color) {
+  floatingTexts.push({ x, y, text, color, life: 60, vy: -1.5 });
+}
+
+function updateParticles(hitStopTimer, player, damagePlayerFn) {
+  if (hitStopTimer > 0) return;
+  particles = particles.filter(p => {
+    p.x += p.vx; p.y += p.vy;
+    if (p.isProjectile) p.vy += 0.1;
+    else p.vy += 0.05;
+    p.life--;
+    if (p.isProjectile && p.damage) {
+      const pb = { x: p.x - p.size, y: p.y - p.size, w: p.size * 2, h: p.size * 2 };
+      if (player.invincible <= 0 && rectsOverlapCheck(player, pb)) {
+        damagePlayerFn(p.damage);
+        return false;
+      }
+    }
+    return p.life > 0;
+  });
+  floatingTexts = floatingTexts.filter(ft => {
+    ft.y += ft.vy;
+    ft.life--;
+    return ft.life > 0;
+  });
+}
+
+function rectsOverlapCheck(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function clearParticles() {
+  particles = [];
+  floatingTexts = [];
+}
+
+// ============================================================
+// camera.js — Camera system with smooth follow and clamping
+// ============================================================
+
+const camera = { x: 0, y: 0 };
+
+function updateCamera(player, tileMap) {
+  if (!tileMap || tileMap.length === 0) return;
+  const targetX = player.x + player.w / 2 - GAME_W / 2;
+  const targetY = player.y + player.h / 2 - GAME_H / 2;
+  camera.x += (targetX - camera.x) * 0.08;
+  camera.y += (targetY - camera.y) * 0.08;
+  camera.x = Math.max(0, Math.min(tileMap[0].length * TILE - GAME_W, camera.x));
+  camera.y = Math.max(0, Math.min(tileMap.length * TILE - GAME_H, camera.y));
+}
+
+// ============================================================
+// renderer.js — Drawing primitives (shared by all render modules)
+// ============================================================
+
+let ctx = null;
+
+function initRenderer(context) { ctx = context; }
+function getCtx() { return ctx; }
+
+function drawText(text, x, y, size, color, align = 'left', font = 'sans-serif') {
+  ctx.font = `${size}px ${font}`;
+  ctx.fillStyle = color;
+  ctx.textAlign = align;
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x, y);
+}
+
+function drawRect(x, y, w, h, color, radius = 0) {
+  ctx.fillStyle = color;
+  if (radius > 0) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, radius);
+    ctx.fill();
+  } else {
+    ctx.fillRect(x, y, w, h);
+  }
+}
+
+function drawBar(x, y, w, h, pct, bgColor, fillColor, radius = 4) {
+  drawRect(x, y, w, h, bgColor, radius);
+  if (pct > 0) drawRect(x, y, Math.max(h, w * pct), h, fillColor, radius);
+}
+
+function drawOutline(x, y, w, h, color, lineWidth = 2, radius = 0) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lineWidth;
+  if (radius > 0) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, radius);
+    ctx.stroke();
+  } else {
+    ctx.strokeRect(x, y, w, h);
+  }
+}
+
+// ============================================================
+// entities.js — Entity factory functions (enemies, items, NPCs, puzzles, boss)
+// ============================================================
+
+function createEnemy(x, y, type, hp, speed) {
+  return {
+    type: 'enemy', enemyType: type, x: x * TILE, y: y * TILE,
+    w: type === 'patung' ? 28 : 20, h: type === 'patung' ? 34 : 24,
+    hp, maxHp: hp, vx: speed, vy: 0,
+    facing: 1, grounded: false,
+    patrol: { left: (x - 3) * TILE, right: (x + 3) * TILE },
+    attackTimer: 0, hurtTimer: 0, alive: true,
+    animFrame: 0, animTimer: 0,
+    prevY: y * TILE,
+    attackCooldown: 0,
+    isTelegraphing: false, telegraphTimer: 0,
+    isAttacking: false, attackAnimTimer: 0,
+    staggered: false, staggerTimer: 0,
+  };
+}
+
+function createItem(x, y, type) {
+  return {
+    type: 'item', itemType: type, x: x * TILE, y: y * TILE,
+    w: 16, h: 16, collected: false, bobOffset: Math.random() * Math.PI * 2,
+  };
+}
+
+function createNPC(x, y, name, dialog, npcType) {
+  return {
+    type: 'npc', npcType, name, x: x * TILE, y: (y - 1) * TILE,
+    w: 24, h: 36, dialog, dialogIndex: 0,
+    interacted: false, bobOffset: Math.random() * Math.PI * 2,
+  };
+}
+
+function createPuzzleTrigger(x, y) {
+  return {
+    type: 'puzzleTrigger', x: x * TILE, y: y * TILE, w: 32, h: 48,
+    activated: false,
+  };
+}
+
+function createBoss(x, y) {
+  return {
+    type: 'boss', x: x * TILE, y: y * TILE, w: 48, h: 56,
+    hp: 350, maxHp: 350, vx: 1.5, vy: 0,
+    facing: -1, grounded: false, alive: true,
+    phase: 1, attackTimer: 0, attackPattern: 0,
+    hurtTimer: 0, invincible: 0,
+    animFrame: 0, animTimer: 0,
+    patrol: { left: 68 * TILE, right: 78 * TILE },
+    prevY: y * TILE,
+    telegraphTimer: 0, telegraphType: '', isTelegraphing: false,
+    posture: 0, maxPosture: BOSS_MAX_POSTURE,
+    staggered: false, staggerTimer: 0,
+    recoveryTimer: 0,
+    attackExecuted: false,
+  };
+}
+
+function spawnEntities() {
+  const entities = [];
+  const H = LEVEL_H;
+
+  // Enemies
+  entities.push(createEnemy(14, H - 4, 'batu_kecil', 20, 1));
+  entities.push(createEnemy(24, H - 4, 'batu_kecil', 20, 1));
+  entities.push(createEnemy(35, H - 7, 'batu_kecil', 25, 1));
+  entities.push(createEnemy(42, H - 4, 'patung', 35, 1.5));
+  entities.push(createEnemy(57, H - 4, 'patung', 35, 1.5));
+  entities.push(createEnemy(62, H - 4, 'batu_kecil', 25, 1));
+
+  // Items
+  entities.push(createItem(11, H - 8, 'potion'));
+  entities.push(createItem(41, H - 9, 'kristal'));
+  entities.push(createItem(60, H - 10, 'kunci'));
+  entities.push(createItem(7, H - 7, 'rupiah'));
+  entities.push(createItem(36, H - 7, 'rupiah'));
+  entities.push(createItem(56, H - 8, 'rupiah'));
+
+  // NPC
+  entities.push(createNPC(6, H - 4, 'Mbah Darmo', [
+    'Selamat datang, Anak Muda!',
+    'Aku sudah lama menunggu keturunan pahlawan ini.',
+    'Ambil ramuan ini, kamu akan membutuhkannya.',
+    'Hati-hati di dalam candi... Penjaga Batu tidak berkompromi.',
+  ], 'pedagang'));
+
+  // Puzzle trigger
+  entities.push(createPuzzleTrigger(54, H - 4));
+
+  return entities;
+}
+
+// ============================================================
+// level.js — Level generation and tile map management
+// ============================================================
+
+const levelData = [
+  {
+    name: 'Candi Borobudur',
+    subtitle: 'Bangkit dari Debu Waktu',
+    bg1: '#0D0A1A', bg2: '#1A0A2E',
+    artifact: 'Artefak Tanah',
+    width: 80, height: 20,
+  },
+];
+
+function generateLevel1() {
+  const W = 80, H = 20;
+  const map = [];
+  for (let y = 0; y < H; y++) {
+    map[y] = [];
+    for (let x = 0; x < W; x++) {
+      if (y >= H - 2) { map[y][x] = 1; continue; }
+      if (x === 0 || x === W - 1) { map[y][x] = 1; continue; }
+      if (y === H - 3 && (x < 5 || x > W - 6)) { map[y][x] = 1; continue; }
+      map[y][x] = 0;
+    }
+  }
+
+  // Section 1: Entrance area
+  fillRect(map, 0, H - 3, 15, 2, 1);
+  fillRect(map, 5, H - 5, 3, 1, 2);
+  fillRect(map, 10, H - 6, 4, 1, 2);
+  fillRect(map, 16, H - 3, 20, 2, 1);
+  for (let i = 0; i < 4; i++) fillRect(map, 18 + i, H - 4 - i, 2, 1, 1);
+  fillRect(map, 22, H - 8, 6, 1, 2);
+  fillRect(map, 22, H - 8, 1, 5, 1);
+  fillRect(map, 27, H - 8, 1, 5, 1);
+
+  // Section 2: Candi interior
+  fillRect(map, 30, H - 3, 22, 2, 1);
+  fillRect(map, 30, H - 3, 1, 8, 1);
+  fillRect(map, 30, H - 8, 3, 1, 1);
+  fillRect(map, 35, H - 6, 3, 1, 2);
+  fillRect(map, 40, H - 8, 3, 1, 2);
+  fillRect(map, 44, H - 10, 3, 1, 2);
+  fillRect(map, 33, H - 4, 1, 1, 1);
+  fillRect(map, 38, H - 4, 1, 1, 1);
+  fillRect(map, 43, H - 4, 1, 1, 1);
+
+  // Section 3: Puzzle room
+  fillRect(map, 52, H - 3, 15, 2, 1);
+  fillRect(map, 52, H - 3, 1, 8, 1);
+  fillRect(map, 52, H - 10, 4, 1, 1);
+  fillRect(map, 55, H - 7, 3, 1, 2);
+  fillRect(map, 59, H - 9, 3, 1, 2);
+  fillRect(map, 63, H - 6, 3, 1, 2);
+
+  // Section 4: Boss arena
+  fillRect(map, 67, H - 3, 13, 2, 1);
+  fillRect(map, 67, H - 3, 1, 10, 1);
+  fillRect(map, 79, H - 3, 1, 10, 1);
+  fillRect(map, 70, H - 7, 2, 1, 2);
+  fillRect(map, 76, H - 7, 2, 1, 2);
+
+  // Checkpoints
+  map[H - 4][28] = 9;
+  map[H - 4][50] = 9;
+
+  return map;
+}
+
+function fillRect(map, sx, sy, w, h, tile) {
+  for (let y = sy; y < sy + h && y < map.length; y++)
+    for (let x = sx; x < sx + w && x < map[0].length; x++)
+      if (y >= 0 && x >= 0) map[y][x] = tile;
+}
+
+// ============================================================
+// player.js — Player entity, update logic, damage, respawn
+// ============================================================
+
+const player = {
+  x: 80, y: GROUND_Y - 36, w: 24, h: 36,
+  prevY: GROUND_Y - 36,
+  vx: 0, vy: 0,
+  hp: 100, maxHp: 100,
+  level: 1, exp: 0, expNext: 50,
+  facing: 1, grounded: false,
+  coyoteTimer: 0, jumpBufferTimer: 0,
+  attacking: false, attackTimer: 0, attackCombo: 0,
+  comboWindow: 0, attackHit: false,
+  heavyAttacking: false, heavyAttackTimer: 0, heavyAttackHit: false,
+  parryTimer: 0, parryWindow: 0,
+  dodging: false, dodgeTimer: 0, dodgeDir: 1,
+  invincible: 0,
+  skillCooldown: 0, skillMaxCooldown: 180,
+  energy: 100, maxEnergy: 100,
+  stamina: MAX_STAMINA, maxStamina: MAX_STAMINA,
+  healing: false, healingTimer: 0, healTicksRemaining: 0, healPerTick: 0,
+  artifacts: 0, rupiah: 0,
+  animFrame: 0, animTimer: 0,
+  state: 'idle', hurtTimer: 0,
+  checkpoint: { x: 80, y: GROUND_Y - 36 },
+  potions: 3, keys: 0,
+};
+
+// Shared mutable state references (set from game.js)
+let gameStateRef = { value: 'menu' };
+let hitStopRef = { value: 0 };
+let shakeRef = { timer: 0, intensity: 0 };
+let parryFlashRef = { timer: 0 };
+let deathCountRef = { value: 0 };
+
+function setStateRefs(gs, hs, sh, pf, dc) {
+  gameStateRef = gs; hitStopRef = hs; shakeRef = sh;
+  parryFlashRef = pf; deathCountRef = dc;
+}
+
+function updatePlayer(keys, entities, boss, bossActive, puzzleState, tileMap, startDialog, initPuzzle) {
+  if (hitStopRef.value > 0) return;
+
+  if (player.hurtTimer > 0) player.hurtTimer--;
+  if (player.invincible > 0) player.invincible--;
+  if (player.skillCooldown > 0) player.skillCooldown--;
+  player.prevY = player.y;
+
+  // ---- HEALING ----
+  if (player.healing) {
+    player.healingTimer++;
+    if (player.healingTimer % Math.floor(HEAL_ANIMATION_DURATION / HEAL_TICKS) === 0 && player.healTicksRemaining > 0) {
+      player.hp = Math.min(player.maxHp, player.hp + player.healPerTick);
+      player.healTicksRemaining--;
+      spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.green, 2, 1, 15);
+    }
+    if (player.healingTimer >= HEAL_ANIMATION_DURATION) player.healing = false;
+    player.vx = 0;
+    applyGravityAndCollision(tileMap);
+    return;
+  }
+
+  // ---- STAMINA REGEN ----
+  const isExerting = player.dodging || player.attacking || player.heavyAttacking || player.parryTimer > 0;
+  if (!isExerting && player.stamina < player.maxStamina) {
+    player.stamina = Math.min(player.maxStamina, player.stamina + STAMINA_REGEN);
+  }
+
+  // ---- COYOTE TIME ----
+  if (player.grounded) player.coyoteTimer = COYOTE_TIME;
+  else if (player.coyoteTimer > 0) player.coyoteTimer--;
+
+  // ---- JUMP BUFFER ----
+  if (justPressed('ArrowUp') || justPressed('KeyW')) player.jumpBufferTimer = JUMP_BUFFER_TIME;
+  else if (player.jumpBufferTimer > 0) player.jumpBufferTimer--;
+
+  // ---- PARRY ----
+  if (player.parryTimer > 0) {
+    player.parryTimer--;
+    player.parryWindow = player.parryTimer > (PARRY_DURATION - PARRY_WINDOW)
+      ? player.parryTimer - (PARRY_DURATION - PARRY_WINDOW) : 0;
+    player.vx = 0;
+    applyGravityAndCollision(tileMap);
+    return;
+  } else {
+    player.parryWindow = 0;
+  }
+
+  // ---- DODGE ----
+  if (player.dodging) {
+    player.dodgeTimer--;
+    player.vx = player.dodgeDir * DODGE_SPEED;
+    player.invincible = 3;
+    if (player.dodgeTimer <= 0) player.dodging = false;
+  }
+  // ---- LIGHT ATTACK ----
+  else if (player.attacking) {
+    player.attackTimer--;
+    player.vx *= 0.7;
+    if (player.attackTimer <= 0) { player.attacking = false; player.comboWindow = COMBO_WINDOW; }
+  }
+  // ---- HEAVY ATTACK ----
+  else if (player.heavyAttacking) {
+    player.heavyAttackTimer--;
+    player.vx *= 0.5;
+    if (player.heavyAttackTimer === HEAVY_ATTACK_DURATION - HEAVY_ATTACK_WINDUP && !player.heavyAttackHit) {
+      player.heavyAttackHit = true;
+      const atkBox = {
+        x: player.facing > 0 ? player.x + player.w : player.x - ATTACK_RANGE - 10,
+        y: player.y - 10, w: ATTACK_RANGE + 10, h: player.h + 20,
+      };
+      playSound('heavyAttack');
+      entities.forEach(e => {
+        if (e.type === 'enemy' && e.alive && rectsOverlapAtk(atkBox, e))
+          damageEnemy(e, HEAVY_ATTACK_DAMAGE + player.level * 3, entities);
+      });
+      if (bossActive && boss && boss.alive && rectsOverlapAtk(atkBox, boss))
+        damageBoss(boss, HEAVY_ATTACK_DAMAGE + player.level * 4);
+      spawnParticle(player.x + player.w / 2 + player.facing * 30, player.y + player.h / 2, C.gold, 12, 5, 25);
+      shakeRef.timer = 5; shakeRef.intensity = 4;
+    }
+    if (player.heavyAttackTimer <= 0) player.heavyAttacking = false;
+  }
+  // ---- COMBO WINDOW ----
+  else if (player.comboWindow > 0) {
+    player.comboWindow--;
+    player.vx = 0;
+    if (keys['ArrowLeft'] || keys['KeyA']) { player.vx = -PLAYER_SPEED; player.facing = -1; }
+    if (keys['ArrowRight'] || keys['KeyD']) { player.vx = PLAYER_SPEED; player.facing = 1; }
+  }
+  // ---- NORMAL ----
+  else {
+    player.vx = 0;
+    if (keys['ArrowLeft'] || keys['KeyA']) { player.vx = -PLAYER_SPEED; player.facing = -1; }
+    if (keys['ArrowRight'] || keys['KeyD']) { player.vx = PLAYER_SPEED; player.facing = 1; }
+  }
+
+  // ==== JUMP (outside else blocks) ====
+  if (player.jumpBufferTimer > 0 && player.coyoteTimer > 0 && !player.healing) {
+    player.vy = JUMP_FORCE;
+    player.grounded = false;
+    player.coyoteTimer = 0;
+    player.jumpBufferTimer = 0;
+    player.attacking = false;
+    player.heavyAttacking = false;
+    player.comboWindow = 0;
+    player.parryTimer = 0;
+    playSound('jump');
+  }
+
+  // ==== LIGHT ATTACK (SPACE) ====
+  if (justPressed('Space') && !player.dodging && !player.heavyAttacking && !player.healing && player.parryTimer <= 0) {
+    if (player.stamina >= STAMINA_LIGHT_COST) {
+      player.stamina -= STAMINA_LIGHT_COST;
+      player.attacking = true;
+      player.attackHit = false;
+      player.comboWindow = 0;
+      let dmg, dur;
+      if (player.attackCombo === 0) { dmg = COMBO_1_DAMAGE + player.level * 2; dur = COMBO_1_DURATION; }
+      else if (player.attackCombo === 1) { dmg = COMBO_2_DAMAGE + player.level * 2; dur = COMBO_2_DURATION; }
+      else { dmg = COMBO_3_DAMAGE + player.level * 3; dur = COMBO_3_DURATION; }
+      player.attackTimer = dur;
+      playSound('attack');
+      const atkBox = {
+        x: player.facing > 0 ? player.x + player.w : player.x - ATTACK_RANGE,
+        y: player.y - 5, w: ATTACK_RANGE, h: player.h + 10,
+      };
+      entities.forEach(e => {
+        if (e.type === 'enemy' && e.alive && rectsOverlapAtk(atkBox, e)) {
+          let finalDmg = e.staggered ? Math.floor(dmg * STAGGER_DAMAGE_MULT) : dmg;
+          damageEnemy(e, finalDmg, entities);
+          player.attackHit = true;
+        }
+      });
+      if (bossActive && boss && boss.alive && rectsOverlapAtk(atkBox, boss)) {
+        let finalDmg = boss.staggered ? Math.floor(dmg * STAGGER_DAMAGE_MULT) : dmg;
+        damageBoss(boss, finalDmg);
+        player.attackHit = true;
+      }
+      player.attackCombo = (player.attackCombo + 1) % 3;
+    } else { playSound('noStamina'); }
+  }
+
+  // ==== HEAVY ATTACK (F) ====
+  if (justPressed('KeyF') && !player.dodging && !player.attacking && !player.heavyAttacking && !player.healing && player.parryTimer <= 0) {
+    if (player.stamina >= STAMINA_HEAVY_COST && player.energy >= HEAVY_ATTACK_ENERGY) {
+      player.stamina -= STAMINA_HEAVY_COST;
+      player.energy -= HEAVY_ATTACK_ENERGY;
+      player.heavyAttacking = true;
+      player.heavyAttackTimer = HEAVY_ATTACK_DURATION;
+      player.heavyAttackHit = false;
+      player.comboWindow = 0;
+      player.attackCombo = 0;
+      playSound('heavyAttack');
+    } else { playSound('noStamina'); }
+  }
+
+  // ==== PARRY (R) ====
+  if (justPressed('KeyR') && !player.dodging && !player.attacking && !player.heavyAttacking && !player.healing && player.parryTimer <= 0) {
+    if (player.stamina >= STAMINA_PARRY_COST) {
+      player.stamina -= STAMINA_PARRY_COST;
+      player.parryTimer = PARRY_DURATION;
+      player.parryWindow = PARRY_WINDOW;
+      player.comboWindow = 0;
+      player.attackCombo = 0;
+      playSound('parry');
+    } else { playSound('noStamina'); }
+  }
+
+  // ==== DODGE ====
+  if ((justPressed('ShiftLeft') || justPressed('ShiftRight')) && !player.healing) {
+    if (!player.dodging && player.stamina >= STAMINA_DODGE_COST) {
+      player.stamina -= STAMINA_DODGE_COST;
+      player.attacking = false; player.heavyAttacking = false;
+      player.comboWindow = 0; player.parryTimer = 0; player.attackCombo = 0;
+      player.dodging = true;
+      player.dodgeTimer = DODGE_DURATION;
+      player.dodgeDir = player.facing;
+      playSound('dodge');
+    } else if (!player.dodging) { playSound('noStamina'); }
+  }
+
+  // ==== SKILL (Q) ====
+  if (justPressed('KeyQ') && player.skillCooldown <= 0 && player.energy >= 30 && !player.dodging && !player.healing && player.parryTimer <= 0) {
+    player.skillCooldown = player.skillMaxCooldown;
+    player.energy -= 30;
+    player.attacking = false; player.heavyAttacking = false; player.comboWindow = 0;
+    playSound('skill');
+    const skillBox = { x: player.x - 60, y: player.y - 20, w: 120 + player.w, h: player.h + 40 };
+    spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.gold, 20, 5, 40);
+    entities.forEach(e => {
+      if (e.type === 'enemy' && e.alive && rectsOverlapAtk(skillBox, e)) {
+        let finalDmg = SKILL_DAMAGE + player.level * 5;
+        if (e.staggered) finalDmg = Math.floor(finalDmg * STAGGER_DAMAGE_MULT);
+        damageEnemy(e, finalDmg, entities);
+      }
+    });
+    if (bossActive && boss && boss.alive && rectsOverlapAtk(skillBox, boss)) {
+      let finalDmg = SKILL_DAMAGE + player.level * 3;
+      if (boss.staggered) finalDmg = Math.floor(finalDmg * STAGGER_DAMAGE_MULT);
+      damageBoss(boss, finalDmg);
+    }
+  }
+
+  // ==== E KEY: NPC/Puzzle/Healing ====
+  if (justPressed('KeyE')) {
+    let interacted = false;
+    entities.forEach(e => {
+      if (interacted) return;
+      if (e.type === 'npc') {
+        const dist = Math.abs((player.x + player.w / 2) - (e.x + e.w / 2));
+        if (dist < 60) { startDialog(e.name, e.dialog); interacted = true; }
+      }
+    });
+    if (!interacted) {
+      entities.forEach(e => {
+        if (interacted) return;
+        if (e.type === 'puzzleTrigger' && !e.activated) {
+          const dist = Math.abs((player.x + player.w / 2) - (e.x + e.w / 2));
+          if (dist < 50) { e.activated = true; initPuzzle(); interacted = true; }
+        }
+      });
+    }
+    if (!interacted && player.potions > 0 && player.hp < player.maxHp && !player.dodging && !player.attacking && !player.heavyAttacking && player.parryTimer <= 0) {
+      player.potions--;
+      player.healing = true;
+      player.healingTimer = 0;
+      player.healTicksRemaining = HEAL_TICKS;
+      player.healPerTick = HEAL_AMOUNT / HEAL_TICKS;
+      player.attacking = false; player.heavyAttacking = false;
+      player.comboWindow = 0; player.parryTimer = 0; player.attackCombo = 0;
+      playSound('heal');
+      interacted = true;
+    }
+  }
+
+  // Physics
+  applyGravityAndCollision(tileMap);
+
+  // Item pickup
+  entities.forEach(e => {
+    if (e.type === 'item' && !e.collected && rectsOverlapAtk(player, e)) {
+      e.collected = true;
+      playSound('pickup');
+      switch (e.itemType) {
+        case 'potion': player.potions++; spawnFloatingText(e.x, e.y - 10, '+Ramuan', C.green); break;
+        case 'kristal': player.energy = Math.min(player.maxEnergy, player.energy + 50); spawnFloatingText(e.x, e.y - 10, '+Energi', C.cyan); break;
+        case 'kunci': player.keys++; spawnFloatingText(e.x, e.y - 10, '+Kunci', C.gold); break;
+        case 'rupiah': player.rupiah += 25; spawnFloatingText(e.x, e.y - 10, '+25 Rupiah', C.goldLight); break;
+      }
+    }
+  });
+
+  // Checkpoint
+  const ptx = Math.floor((player.x + player.w / 2) / 32);
+  const pty = Math.floor((player.y + player.h) / 32);
+  if (tileMap && pty >= 0 && pty < tileMap.length && ptx >= 0 && ptx < tileMap[0].length) {
+    if (tileMap[pty][ptx] === 9) {
+      player.checkpoint = { x: player.x, y: player.y };
+      tileMap[pty][ptx] = 0;
+      spawnFloatingText(player.x, player.y - 30, 'Checkpoint!', C.gold);
+      spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.gold, 15, 3, 40);
+      playSound('checkpoint');
+    }
+  }
+
+  // Fall death
+  if (tileMap && player.y > tileMap.length * 32 + 100) playerDie();
+
+  // Energy regen
+  if (player.energy < player.maxEnergy) player.energy += 0.05;
+
+  // Animation
+  player.animTimer++;
+  if (player.animTimer > 8) { player.animTimer = 0; player.animFrame = (player.animFrame + 1) % 4; }
+
+  // State
+  if (player.healing) player.state = 'heal';
+  else if (player.dodging) player.state = 'dodge';
+  else if (player.heavyAttacking) player.state = 'heavyAttack';
+  else if (player.attacking) player.state = 'attack';
+  else if (player.parryTimer > 0) player.state = 'parry';
+  else if (player.hurtTimer > 0) player.state = 'hurt';
+  else if (!player.grounded && player.vy < 0) player.state = 'jump';
+  else if (!player.grounded) player.state = 'fall';
+  else if (Math.abs(player.vx) > 0.5) player.state = 'run';
+  else player.state = 'idle';
+
+  // Boss trigger
+  if (player.x > 68 * 32 && puzzleState && puzzleState.solved && !bossActive && boss && boss.alive) {
+    return 'triggerBoss';
+  }
+  return null;
+}
+
+function applyGravityAndCollision(tileMap) {
+  player.vy += GRAVITY;
+  if (player.vy > MAX_FALL) player.vy = MAX_FALL;
+  player.x += player.vx;
+  const colsX = tileCollision(player.x, player.y, player.w, player.h, player.prevY);
+  colsX.forEach(c => {
+    if (c.oneway) return;
+    if (player.vx > 0) player.x = c.x - player.w;
+    else if (player.vx < 0) player.x = c.x + c.w;
+  });
+  player.y += player.vy;
+  player.grounded = false;
+  const colsY = tileCollision(player.x, player.y, player.w, player.h, player.prevY);
+  colsY.forEach(c => {
+    if (player.vy > 0) { player.y = c.y - player.h; player.vy = 0; player.grounded = true; }
+    else if (player.vy < 0 && !c.oneway) { player.y = c.y + c.h; player.vy = 0; }
+  });
+}
+
+function rectsOverlapAtk(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function damagePlayer(amount) {
+  if (player.invincible > 0 || player.dodging) return;
+  if (player.parryWindow > 0) {
+    parryFlashRef.timer = 15;
+    player.invincible = 20;
+    playSound('parrySuccess');
+    spawnParticle(player.x + player.w / 2 + player.facing * 15, player.y + player.h / 2, C.parryGold, 15, 5, 30);
+    spawnFloatingText(player.x, player.y - 30, 'PARRY!', C.parryGold);
+    shakeRef.timer = 3; shakeRef.intensity = 2;
+    return;
+  }
+  if (player.healing) player.healing = false;
+  player.hp -= amount;
+  player.invincible = INV_FRAMES;
+  player.hurtTimer = 15;
+  playSound('damage');
+  spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.red, 8, 3);
+  shakeRef.timer = 8; shakeRef.intensity = 4;
+  if (player.hp <= 0) { player.hp = 0; playerDie(); }
+}
+
+function playerDie() {
+  gameStateRef.value = 'gameOver';
+  deathCountRef.value++;
+  spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.red, 30, 5, 60);
+}
+
+function damageEnemy(e, amount, entities) {
+  e.hp -= amount;
+  e.hurtTimer = 10;
+  playSound('hit');
+  spawnParticle(e.x + e.w / 2, e.y + e.h / 2, C.orange, 6, 3);
+  spawnFloatingText(e.x + e.w / 2, e.y - 10, `-${amount}`, C.goldLight);
+  shakeRef.timer = 3; shakeRef.intensity = 2;
+  hitStopRef.value = HIT_STOP_FRAMES;
+  if (e.hp <= 0) {
+    e.alive = false;
+    spawnParticle(e.x + e.w / 2, e.y + e.h / 2, C.stone, 15, 4, 40);
+    gainExp(e.enemyType === 'patung' ? 20 : 10);
+    if (Math.random() < 0.3) {
+      player.rupiah += 10;
+      spawnFloatingText(e.x, e.y - 20, '+10 Rupiah', C.goldLight);
+    }
+  }
+}
+
+function damageBoss(boss, amount) {
+  if (!boss || boss.invincible > 0) return;
+  boss.posture = Math.min(boss.maxPosture, boss.posture + amount * 0.8);
+  if (boss.posture >= boss.maxPosture && !boss.staggered) {
+    boss.staggered = true;
+    boss.staggerTimer = 60; // BOSS_STAGGER_DURATION
+    boss.isTelegraphing = false;
+    boss.telegraphTimer = 0;
+    boss.recoveryTimer = 0;
+    playSound('stagger');
+    spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 2, C.gold, 20, 5, 40);
+    spawnFloatingText(boss.x + boss.w / 2, boss.y - 20, 'STAGGERED!', C.parryGold);
+    shakeRef.timer = 8; shakeRef.intensity = 5;
+  }
+  boss.hp -= amount;
+  boss.hurtTimer = 8;
+  boss.invincible = 20;
+  playSound('hit');
+  spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 2, C.orange, 8, 4);
+  spawnFloatingText(boss.x + boss.w / 2, boss.y - 10, `-${amount}`, C.goldLight);
+  shakeRef.timer = 5; shakeRef.intensity = 3;
+  hitStopRef.value = HIT_STOP_FRAMES;
+  if (boss.hp <= 0) {
+    boss.alive = false;
+    spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 2, C.gold, 40, 6, 60);
+    gainExp(100);
+    player.artifacts++;
+    setTimeout(() => { gameStateRef.value = 'victory'; }, 1500);
+  }
+}
+
+function gainExp(amount) {
+  player.exp += amount;
+  spawnFloatingText(player.x, player.y - 30, `+${amount} EXP`, C.cyan);
+  while (player.exp >= player.expNext) {
+    player.exp -= player.expNext;
+    player.level++;
+    player.expNext = Math.floor(player.expNext * 1.5);
+    player.maxHp += 10; player.hp = player.maxHp;
+    player.maxEnergy += 5; player.energy = player.maxEnergy;
+    player.maxStamina += 5; player.stamina = player.maxStamina;
+    spawnFloatingText(player.x, player.y - 50, `LEVEL UP! Lv.${player.level}`, C.gold);
+    spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.gold, 25, 5, 50);
+  }
+}
+
+function resetPlayer() {
+  const startY = GROUND_Y - player.h;
+  Object.assign(player, {
+    x: 80, y: startY, prevY: startY, vx: 0, vy: 0,
+    hp: 100, maxHp: 100, level: 1, exp: 0, expNext: 50,
+    facing: 1, grounded: false,
+    coyoteTimer: 0, jumpBufferTimer: 0,
+    attacking: false, attackTimer: 0, attackCombo: 0,
+    comboWindow: 0, attackHit: false,
+    heavyAttacking: false, heavyAttackTimer: 0, heavyAttackHit: false,
+    parryTimer: 0, parryWindow: 0,
+    dodging: false, dodgeTimer: 0, dodgeDir: 1,
+    invincible: 0, skillCooldown: 0, skillMaxCooldown: 180,
+    energy: 100, maxEnergy: 100,
+    stamina: MAX_STAMINA, maxStamina: MAX_STAMINA,
+    healing: false, healingTimer: 0, healTicksRemaining: 0, healPerTick: 0,
+    artifacts: 0, rupiah: 0,
+    potions: 3, keys: 0, hurtTimer: 0,
+    checkpoint: { x: 80, y: startY },
+  });
+}
+
+function respawnPlayer() {
+  player.x = player.checkpoint.x;
+  player.y = player.checkpoint.y;
+  player.prevY = player.y;
+  player.hp = player.maxHp;
+  player.stamina = player.maxStamina;
+  player.energy = player.maxEnergy;
+  player.vy = 0; player.vx = 0;
+  player.invincible = 60;
+  player.attacking = false; player.heavyAttacking = false;
+  player.dodging = false; player.healing = false;
+  player.parryTimer = 0; player.comboWindow = 0;
+  player.attackCombo = 0; player.hurtTimer = 0;
+  player.coyoteTimer = 0; player.jumpBufferTimer = 0;
+  gameStateRef.value = 'playing';
+}
+
+// ============================================================
+// enemy.js — Enemy update logic (telegraph, stagger, patrol)
+// ============================================================
+
+function updateEnemies(entities, hitStopTimer, player) {
+  if (hitStopTimer > 0) return;
+
+  entities.forEach(e => {
+    if (e.type !== 'enemy' || !e.alive) return;
+    if (e.hurtTimer > 0) e.hurtTimer--;
+
+    // Staggered
+    if (e.staggered) {
+      e.staggerTimer--;
+      if (e.staggerTimer <= 0) e.staggered = false;
+      return;
+    }
+
+    e.prevY = e.y;
+    e.vy += GRAVITY;
+    if (e.vy > MAX_FALL) e.vy = MAX_FALL;
+
+    // Telegraph
+    if (e.isTelegraphing) {
+      e.telegraphTimer--;
+      if (e.telegraphTimer <= 0) {
+        e.isTelegraphing = false;
+        e.isAttacking = true;
+        e.attackAnimTimer = 10;
+        e.attackCooldown = 60 + Math.floor(Math.random() * 30);
+      }
+    }
+    // Attack animation
+    else if (e.isAttacking) {
+      e.attackAnimTimer--;
+      if (e.attackAnimTimer === 5) {
+        const checkOverlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+        if (checkOverlap(player, e) && player.invincible <= 0) {
+          damagePlayer(e.enemyType === 'patung' ? 15 : 10);
+        }
+      }
+      if (e.attackAnimTimer <= 0) e.isAttacking = false;
+    }
+    // Patrol
+    else {
+      e.x += e.vx;
+      if (e.x <= e.patrol.left || e.x + e.w >= e.patrol.right) {
+        e.vx = -e.vx;
+        e.facing = e.vx > 0 ? 1 : -1;
+      }
+      if (e.attackCooldown > 0) e.attackCooldown--;
+      else {
+        const dist = Math.abs((player.x + player.w / 2) - (e.x + e.w / 2));
+        if (dist < 60) {
+          e.isTelegraphing = true;
+          e.telegraphTimer = 15;
+          e.facing = (player.x > e.x) ? 1 : -1;
+        }
+      }
+    }
+
+    // Collision X
+    const colsX = tileCollision(e.x, e.y, e.w, e.h, e.prevY);
+    colsX.forEach(c => {
+      if (c.oneway) return;
+      if (e.vx > 0) e.x = c.x - e.w;
+      else if (e.vx < 0) e.x = c.x + c.w;
+      e.vx = -e.vx;
+      e.facing = e.vx > 0 ? 1 : -1;
+    });
+
+    // Move Y
+    e.y += e.vy;
+    e.grounded = false;
+    const colsY = tileCollision(e.x, e.y, e.w, e.h, e.prevY);
+    colsY.forEach(c => {
+      if (e.vy > 0) { e.y = c.y - e.h; e.vy = 0; e.grounded = true; }
+      else if (e.vy < 0 && !c.oneway) { e.y = c.y + c.h; e.vy = 0; }
+    });
+
+    // Contact damage
+    const checkOverlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    if (!e.isTelegraphing && !e.isAttacking && e.attackCooldown <= 0 && checkOverlap(player, e) && player.invincible <= 0) {
+      damagePlayer(e.enemyType === 'patung' ? 8 : 5);
+      e.attackCooldown = 40;
+    }
+
+    e.animTimer++;
+    if (e.animTimer > 10) { e.animTimer = 0; e.animFrame = (e.animFrame + 1) % 2; }
+  });
+}
+
+// ============================================================
+// boss.js — Boss update logic and attack execution
+// ============================================================
+
+function updateBoss(boss, bossActive, hitStopTimer, player) {
+  if (!boss || !boss.alive || !bossActive) return;
+  if (hitStopTimer > 0) return;
+
+  if (boss.hurtTimer > 0) boss.hurtTimer--;
+  if (boss.invincible > 0) boss.invincible--;
+
+  // Posture recovery
+  if (!boss.staggered && boss.posture > 0)
+    boss.posture = Math.max(0, boss.posture - BOSS_POSTURE_RECOVERY);
+
+  // Staggered
+  if (boss.staggered) {
+    boss.staggerTimer--;
+    if (boss.staggerTimer <= 0) { boss.staggered = false; boss.posture = 0; }
+    boss.vx = 0;
+    applyBossGravity(boss);
+    return;
+  }
+
+  boss.prevY = boss.y;
+  boss.vy += GRAVITY;
+  if (boss.vy > MAX_FALL) boss.vy = MAX_FALL;
+
+  // Phase
+  const hpPct = boss.hp / boss.maxHp;
+  if (hpPct > 0.66) boss.phase = 1;
+  else if (hpPct > 0.33) boss.phase = 2;
+  else boss.phase = 3;
+
+  // Recovery
+  if (boss.recoveryTimer > 0) {
+    boss.recoveryTimer--;
+    boss.vx = 0;
+    applyBossGravity(boss);
+    return;
+  }
+
+  // Telegraphing
+  if (boss.isTelegraphing) {
+    boss.telegraphTimer--;
+    boss.vx = 0;
+    if (boss.telegraphTimer <= 0) {
+      executeBossAttack(boss, player);
+      boss.isTelegraphing = false;
+      boss.recoveryTimer = BOSS_RECOVERY_FRAMES;
+    }
+    applyBossGravity(boss);
+    return;
+  }
+
+  // Chase player
+  const dx = (player.x + player.w / 2) - (boss.x + boss.w / 2);
+  boss.facing = dx > 0 ? 1 : -1;
+  let moveSpeed = boss.phase === 3 ? 2.2 : (boss.phase === 2 ? 1.8 : 1.2);
+  boss.vx = boss.facing * moveSpeed;
+
+  // Attack pattern selection
+  boss.attackTimer++;
+  let attackThreshold = boss.phase === 3 ? 55 : (boss.phase === 2 ? 75 : 100);
+
+  if (boss.attackTimer > attackThreshold) {
+    boss.attackTimer = 0;
+    chooseBossAttack(boss, dx);
+  }
+
+  // Move X
+  boss.x += boss.vx;
+  const colsX = tileCollision(boss.x, boss.y, boss.w, boss.h, boss.prevY);
+  colsX.forEach(c => {
+    if (c.oneway) return;
+    if (boss.vx > 0) boss.x = c.x - boss.w;
+    else if (boss.vx < 0) boss.x = c.x + c.w;
+  });
+
+  // Move Y
+  boss.y += boss.vy;
+  boss.grounded = false;
+  const colsY = tileCollision(boss.x, boss.y, boss.w, boss.h, boss.prevY);
+  colsY.forEach(c => {
+    if (boss.vy > 0) { boss.y = c.y - boss.h; boss.vy = 0; boss.grounded = true; }
+    else if (boss.vy < 0 && !c.oneway) { boss.y = c.y + c.h; boss.vy = 0; }
+  });
+
+  // Contact damage
+  const checkOverlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  if (!boss.isTelegraphing && boss.recoveryTimer <= 0 && checkOverlap(player, boss) && player.invincible <= 0) {
+    damagePlayer(10);
+  }
+
+  boss.animTimer++;
+  if (boss.animTimer > 12) { boss.animTimer = 0; boss.animFrame = (boss.animFrame + 1) % 2; }
+}
+
+function applyBossGravity(boss) {
+  boss.y += boss.vy;
+  boss.grounded = false;
+  const colsY = tileCollision(boss.x, boss.y, boss.w, boss.h, boss.prevY);
+  colsY.forEach(c => {
+    if (boss.vy > 0) { boss.y = c.y - boss.h; boss.vy = 0; boss.grounded = true; }
+    else if (boss.vy < 0 && !c.oneway) { boss.y = c.y + c.h; boss.vy = 0; }
+  });
+}
+
+function chooseBossAttack(boss, dx) {
+  const absDx = Math.abs(dx);
+  if (boss.phase === 1) {
+    if (absDx < 120) {
+      if (Math.random() < 0.5) {
+        boss.isTelegraphing = true; boss.telegraphType = 'armSwipe'; boss.telegraphTimer = 30;
+      } else {
+        boss.isTelegraphing = true; boss.telegraphType = 'groundPound'; boss.telegraphTimer = 40;
+      }
+    }
+  } else if (boss.phase === 2) {
+    const r = Math.random();
+    if (r < 0.35) { boss.isTelegraphing = true; boss.telegraphType = 'armSwipe'; boss.telegraphTimer = 20; }
+    else if (r < 0.7) { boss.isTelegraphing = true; boss.telegraphType = 'throwRocks'; boss.telegraphTimer = 25; }
+    else { boss.isTelegraphing = true; boss.telegraphType = 'charge'; boss.telegraphTimer = 45; }
+  } else {
+    const r = Math.random();
+    if (r < 0.25) { boss.isTelegraphing = true; boss.telegraphType = 'armSwipe'; boss.telegraphTimer = 15; }
+    else if (r < 0.45) { boss.isTelegraphing = true; boss.telegraphType = 'throwRocks'; boss.telegraphTimer = 18; }
+    else if (r < 0.65) { boss.isTelegraphing = true; boss.telegraphType = 'aoeStomp'; boss.telegraphTimer = 35; }
+    else if (r < 0.85) { boss.isTelegraphing = true; boss.telegraphType = 'charge'; boss.telegraphTimer = 30; }
+    else { boss.isTelegraphing = true; boss.telegraphType = 'throwRocks5'; boss.telegraphTimer = 18; }
+  }
+}
+
+function executeBossAttack(boss, player) {
+  const dx = (player.x + player.w / 2) - (boss.x + boss.w / 2);
+  const dist = Math.abs(dx);
+  const checkOverlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+
+  switch (boss.telegraphType) {
+    case 'armSwipe':
+      if (dist < 110 && player.invincible <= 0) {
+        damagePlayer(boss.phase === 3 ? 25 : (boss.phase === 2 ? 20 : 15));
+      }
+      spawnParticle(boss.x + boss.w / 2 + boss.facing * 40, boss.y + boss.h / 2, C.stone, 8, 4);
+      break;
+    case 'groundPound':
+      if (dist < 120 && player.invincible <= 0) damagePlayer(22);
+      spawnParticle(boss.x + boss.w / 2, boss.y + boss.h, C.stone, 15, 5);
+      break;
+    case 'throwRocks':
+      for (let i = 0; i < 3; i++) {
+        const angle = Math.PI / 2 + (i - 1) * 0.3;
+        particles.push({
+          x: boss.x + boss.w / 2, y: boss.y,
+          vx: Math.cos(angle) * -boss.facing * 4, vy: Math.sin(angle) * -4,
+          life: 60, maxLife: 60, color: C.stoneDark, size: 6,
+          isProjectile: true, damage: 12,
+        });
+      }
+      break;
+    case 'throwRocks5':
+      for (let i = 0; i < 5; i++) {
+        const angle = Math.PI / 2 + (i - 2) * 0.25;
+        particles.push({
+          x: boss.x + boss.w / 2, y: boss.y,
+          vx: Math.cos(angle) * -boss.facing * 5, vy: Math.sin(angle) * -5,
+          life: 50, maxLife: 50, color: C.stoneDark, size: 7,
+          isProjectile: true, damage: 14,
+        });
+      }
+      break;
+    case 'charge':
+      boss.vx = boss.facing * 6;
+      boss.x += boss.vx * 5;
+      if (checkOverlap(player, boss) && player.invincible <= 0)
+        damagePlayer(boss.phase === 3 ? 28 : 20);
+      spawnParticle(boss.x + boss.w / 2, boss.y + boss.h, C.stoneDark, 10, 3);
+      break;
+    case 'aoeStomp':
+      if (dist < 150 && player.invincible <= 0) damagePlayer(25);
+      spawnParticle(boss.x + boss.w / 2, boss.y + boss.h, C.red, 20, 6);
+      spawnParticle(boss.x + boss.w / 2 - 50, boss.y + boss.h, C.stone, 8, 3);
+      spawnParticle(boss.x + boss.w / 2 + 50, boss.y + boss.h, C.stone, 8, 3);
+      break;
+  }
+  playSound('hit');
+}
+
+// ============================================================
+// puzzle.js — Puzzle minigame state and logic
+// ============================================================
+
+let puzzleState = null;
+
+function initPuzzle() {
+  puzzleState = {
+    symbols: ['🌤', '💧', '🔥', '🌪️', '✨'],
+    sequence: [2, 0, 4, 1, 3],
+    playerSeq: [],
+    showingSequence: true,
+    showIndex: 0,
+    showTimer: 0,
+    solved: false,
+    failed: false,
+    failTimer: 0,
+    buttons: [],
+    highlight: -1,
+    highlightTimer: 0,
+  };
+  const bw = 70, bh = 70, gap = 15;
+  const startX = GAME_W / 2 - (5 * bw + 4 * gap) / 2;
+  for (let i = 0; i < 5; i++) {
+    puzzleState.buttons.push({
+      x: startX + i * (bw + gap), y: GAME_H / 2 - 20,
+      w: bw, h: bh, symbol: puzzleState.symbols[i], index: i,
+    });
+  }
+}
+
+function getPuzzleState() { return puzzleState; }
+function resetPuzzle() { puzzleState = null; }
+
+// ============================================================
+// dialog.js — Dialog system
+// ============================================================
+
+let currentDialog = null;
+let dialogCallback = null;
+
+function startDialog(speaker, lines, callback) {
+  currentDialog = { speaker, lines, lineIndex: 0, charIndex: 0, timer: 0, done: false };
+  dialogCallback = callback || null;
+  playSound('dialog');
+  return 'dialog'; // signal to switch gameState
+}
+
+function getCurrentDialog() { return currentDialog; }
+
+function updateDialog() {
+  if (!currentDialog) return null;
+  currentDialog.timer++;
+  if (currentDialog.timer % 2 === 0 && currentDialog.charIndex < currentDialog.lines[currentDialog.lineIndex].length) {
+    currentDialog.charIndex++;
+  }
+  if (currentDialog.charIndex >= currentDialog.lines[currentDialog.lineIndex].length) {
+    currentDialog.done = true;
+  }
+  if (justPressed('KeyE') || justPressed('Space')) {
+    if (!currentDialog.done) {
+      currentDialog.charIndex = currentDialog.lines[currentDialog.lineIndex].length;
+      currentDialog.done = true;
+    } else {
+      currentDialog.lineIndex++;
+      currentDialog.charIndex = 0;
+      currentDialog.done = false;
+      if (currentDialog.lineIndex >= currentDialog.lines.length) {
+        const cb = dialogCallback;
+        currentDialog = null;
+        dialogCallback = null;
+        return { done: true, callback: cb };
+      } else {
+        playSound('dialog');
+      }
+    }
+  }
+  return { done: false };
+}
+
+// ============================================================
+// draw-game.js — All game rendering functions
+// ============================================================
+
+let gameTime = 0;
+function setGameTime(t) { gameTime = t; }
+
+// ---- BACKGROUND ----
+function drawBackground() {
+  const ctx = getCtx();
+  const grad = ctx.createLinearGradient(0, 0, 0, GAME_H);
+  grad.addColorStop(0, '#0D0A1A');
+  grad.addColorStop(0.5, '#1A0A2E');
+  grad.addColorStop(1, '#0A0A1A');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, GAME_W, GAME_H);
+
+  ctx.fillStyle = '#FFFFFF15';
+  for (let i = 0; i < 40; i++) {
+    const x = (i * 137 + gameTime * 0.02) % GAME_W;
+    const y = (i * 97) % (GAME_H * 0.6);
+    const s = (Math.sin(gameTime * 0.03 + i) + 1) * 1.5;
+    ctx.fillRect(x, y, s, s);
+  }
+
+  ctx.fillStyle = '#1A1020';
+  ctx.beginPath(); ctx.moveTo(0, GAME_H);
+  for (let x = 0; x <= GAME_W; x += 40) {
+    const h = Math.sin((x + camera.x * 0.1) * 0.01) * 60 + Math.sin((x + camera.x * 0.1) * 0.025) * 30;
+    ctx.lineTo(x, GAME_H - 120 + h);
+  }
+  ctx.lineTo(GAME_W, GAME_H); ctx.fill();
+
+  ctx.fillStyle = '#120A18';
+  const candiX = 200 - camera.x * 0.15;
+  for (let i = 0; i < 3; i++) {
+    const bx = candiX + i * 120;
+    const bh = 60 + i * 15;
+    ctx.beginPath();
+    ctx.moveTo(bx, GAME_H - 60);
+    ctx.lineTo(bx + 30, GAME_H - 60 - bh);
+    ctx.lineTo(bx + 40, GAME_H - 60 - bh - 15);
+    ctx.lineTo(bx + 50, GAME_H - 60 - bh);
+    ctx.lineTo(bx + 80, GAME_H - 60);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = '#0F0818';
+  ctx.beginPath(); ctx.moveTo(0, GAME_H);
+  for (let x = 0; x <= GAME_W; x += 30) {
+    const h = Math.sin((x + camera.x * 0.3) * 0.015) * 40 + Math.sin((x + camera.x * 0.3) * 0.04) * 20;
+    ctx.lineTo(x, GAME_H - 60 + h);
+  }
+  ctx.lineTo(GAME_W, GAME_H); ctx.fill();
+}
+
+// ---- LEVEL ----
+function drawLevel(tileMap) {
+  if (!tileMap || tileMap.length === 0) return;
+  const ctx = getCtx();
+  const H = tileMap.length, W = tileMap[0].length;
+  const startTX = Math.max(0, Math.floor(camera.x / TILE));
+  const endTX = Math.min(W, Math.ceil((camera.x + GAME_W) / TILE) + 1);
+  const startTY = Math.max(0, Math.floor(camera.y / TILE));
+  const endTY = Math.min(H, Math.ceil((camera.y + GAME_H) / TILE) + 1);
+
+  for (let ty = startTY; ty < endTY; ty++) {
+    for (let tx = startTX; tx < endTX; tx++) {
+      const tile = tileMap[ty][tx];
+      const sx = tx * TILE - camera.x;
+      const sy = ty * TILE - camera.y;
+      if (tile === 0) continue;
+      if (tile === 1) {
+        drawRect(sx, sy, TILE, TILE, C.stoneDark);
+        drawRect(sx + 1, sy + 1, TILE - 2, TILE - 2, C.stone);
+        ctx.fillStyle = C.stoneLight + '30';
+        ctx.fillRect(sx + 2, sy + 2, TILE - 4, 2);
+        ctx.fillRect(sx + 2, sy + 2, 2, TILE - 4);
+        if ((tx + ty) % 4 === 0) { ctx.fillStyle = C.gold + '15'; ctx.fillRect(sx + 4, sy + 4, TILE - 8, TILE - 8); }
+      } else if (tile === 2) {
+        drawRect(sx, sy, TILE, TILE / 2, C.stone);
+        drawRect(sx, sy, TILE, 3, C.gold + '40');
+        ctx.fillStyle = C.stoneDark;
+        ctx.fillRect(sx + TILE / 2 - 2, sy + TILE / 2, 4, TILE / 2);
+      } else if (tile === 9) {
+        const glowIntensity = Math.sin(gameTime * 0.08) * 0.3 + 0.7;
+        ctx.fillStyle = `rgba(212, 175, 55, ${glowIntensity * 0.15})`;
+        ctx.fillRect(sx - 4, sy - 4, TILE + 8, TILE + 8);
+        ctx.fillStyle = `rgba(212, 175, 55, ${glowIntensity * 0.25})`;
+        ctx.fillRect(sx - 2, sy - 2, TILE + 4, TILE + 4);
+        drawRect(sx + 4, sy + 8, TILE - 8, TILE - 8, C.goldDark);
+        drawRect(sx + 6, sy + 10, TILE - 12, TILE - 12, C.gold);
+        const flameH = 6 + Math.sin(gameTime * 0.15) * 3;
+        ctx.fillStyle = C.goldLight + 'CC';
+        ctx.beginPath(); ctx.arc(sx + TILE / 2, sy + 6, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = C.gold + '80';
+        ctx.beginPath(); ctx.arc(sx + TILE / 2, sy + 4 - flameH / 3, 3, 0, Math.PI * 2); ctx.fill();
+        if (gameTime % 20 === 0) spawnParticle(sx + TILE / 2 + camera.x, sy + camera.y, C.goldLight, 1, 1, 20);
+      }
+    }
+  }
+}
+
+// ---- PLAYER ----
+function drawPlayer(parryFlashTimer) {
+  const ctx = getCtx();
+  const px = player.x - camera.x;
+  const py = player.y - camera.y;
+  const f = player.facing;
+
+  if (player.invincible > 0 && Math.floor(player.invincible / 3) % 2 === 0) return;
+
+  ctx.save();
+  ctx.translate(px + player.w / 2, py + player.h / 2);
+  ctx.scale(f, 1);
+  ctx.translate(-player.w / 2, -player.h / 2);
+
+  const bodyColor = player.hurtTimer > 0 ? C.red : '#D4A574';
+  const clothColor = player.dodging ? C.gold + '80' : '#8B4513';
+
+  const legOffset = player.state === 'run' ? Math.sin(player.animFrame * 1.5) * 4 : 0;
+  drawRect(4, 24, 6, 12 + legOffset, bodyColor);
+  drawRect(14, 24, 6, 12 - legOffset, bodyColor);
+  drawRect(2, 18, 20, 10, clothColor);
+  ctx.fillStyle = C.gold + '40';
+  ctx.fillRect(4, 20, 3, 2); ctx.fillRect(10, 20, 3, 2); ctx.fillRect(16, 20, 3, 2);
+  drawRect(4, 8, 16, 12, bodyColor);
+  drawRect(5, -2, 14, 12, bodyColor);
+  drawRect(4, -4, 16, 5, '#3D2B1F');
+  drawRect(8, -6, 8, 3, '#3D2B1F');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(10, 2, 3, 2); ctx.fillRect(16, 2, 3, 2);
+  drawRect(18, 16, 3, 14, C.goldDark);
+  drawRect(17, 14, 5, 3, C.gold);
+
+  // Healing aura
+  if (player.healing) {
+    const healAlpha = 0.3 + Math.sin(gameTime * 0.2) * 0.15;
+    ctx.fillStyle = `rgba(68, 255, 68, ${healAlpha})`;
+    ctx.fillRect(-4, -4, player.w + 8, player.h + 8);
+  }
+
+  // Light attack effect
+  if (player.attacking) {
+    const comboIdx = (player.attackCombo + 2) % 3;
+    const atkDur = comboIdx === 0 ? COMBO_1_DURATION : (comboIdx === 1 ? COMBO_2_DURATION : COMBO_3_DURATION);
+    const atkProgress = 1 - player.attackTimer / atkDur;
+    if (comboIdx === 0) {
+      const slashX = 18 + atkProgress * 30;
+      ctx.strokeStyle = C.gold + 'AA'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(slashX, 15, 15 + atkProgress * 10, -0.8, 0.8); ctx.stroke();
+      ctx.strokeStyle = C.goldLight + '44'; ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.arc(slashX - 5, 15, 12 + atkProgress * 12, -0.5, 0.5); ctx.stroke();
+    } else if (comboIdx === 1) {
+      const slashY = 25 - atkProgress * 20;
+      ctx.strokeStyle = C.gold + 'CC'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(20, slashY, 15 + atkProgress * 8, -1.2, 0.3); ctx.stroke();
+    } else {
+      const slashY = -5 + atkProgress * 25;
+      ctx.strokeStyle = C.goldLight + 'DD'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(22, slashY, 18 + atkProgress * 12, 0.5, 1.8); ctx.stroke();
+    }
+  }
+
+  // Heavy attack
+  if (player.heavyAttacking) {
+    const atkProgress = 1 - player.heavyAttackTimer / HEAVY_ATTACK_DURATION;
+    if (player.heavyAttackTimer > HEAVY_ATTACK_DURATION - HEAVY_ATTACK_WINDUP) {
+      ctx.strokeStyle = C.goldDark + '80'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(5, 10, 10 + atkProgress * 5, 0.5, 2.5); ctx.stroke();
+    } else {
+      const strikeProgress = (atkProgress - HEAVY_ATTACK_WINDUP / HEAVY_ATTACK_DURATION) / (1 - HEAVY_ATTACK_WINDUP / HEAVY_ATTACK_DURATION);
+      const slashX = 10 + strikeProgress * 40;
+      ctx.strokeStyle = C.goldLight + 'EE'; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(slashX, 15, 20 + strikeProgress * 15, -1.0, 1.0); ctx.stroke();
+    }
+  }
+
+  // Parry
+  if (player.parryTimer > 0) {
+    if (player.parryWindow > 0) {
+      ctx.strokeStyle = C.parryGold + 'CC'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(player.w / 2, player.h / 2, 20 + Math.sin(gameTime * 0.5) * 3, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = C.parryGold + '30';
+      ctx.beginPath(); ctx.arc(player.w / 2, player.h / 2, 18, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.strokeStyle = C.gold + '40'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(player.w / 2, player.h / 2, 18 * (player.parryTimer / PARRY_DURATION), 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+
+  // Dodge trail
+  if (player.dodging) { ctx.globalAlpha = 0.3; drawRect(-10, 0, player.w, player.h, C.gold); ctx.globalAlpha = 1; }
+
+  // Skill effect
+  if (player.skillCooldown > player.skillMaxCooldown - 20) {
+    const t = (player.skillMaxCooldown - player.skillCooldown) / 20;
+    ctx.globalAlpha = 1 - t; drawRect(-20, -20, player.w + 40, player.h + 40, C.gold + '40'); ctx.globalAlpha = 1;
+  }
+
+  // Stamina low
+  if (player.stamina < 20 && !player.dodging) { ctx.fillStyle = C.red + '30'; ctx.fillRect(0, 0, player.w, player.h); }
+
+  ctx.restore();
+
+  if (parryFlashTimer > 0) {
+    ctx.fillStyle = `rgba(255, 215, 0, ${parryFlashTimer / 15 * 0.3})`;
+    ctx.fillRect(0, 0, GAME_W, GAME_H);
+  }
+}
+
+// ---- ENEMIES ----
+function drawEnemies(entities) {
+  const ctx = getCtx();
+  entities.forEach(e => {
+    if (e.type !== 'enemy' || !e.alive) return;
+    const ex = e.x - camera.x;
+    const ey = e.y - camera.y;
+    ctx.save();
+    ctx.translate(ex + e.w / 2, ey + e.h / 2);
+    ctx.scale(e.facing, 1);
+    ctx.translate(-e.w / 2, -e.h / 2);
+    if (e.hurtTimer > 0) ctx.globalAlpha = 0.7;
+    if (e.isTelegraphing) {
+      const teleAlpha = 0.3 + Math.sin(gameTime * 0.4) * 0.2;
+      ctx.fillStyle = `rgba(255, 68, 68, ${teleAlpha})`;
+      ctx.fillRect(-4, -4, e.w + 8, e.h + 8);
+    }
+    if (e.staggered) { ctx.fillStyle = C.parryGold + '40'; ctx.fillRect(-2, -2, e.w + 4, e.h + 4); }
+    if (e.enemyType === 'batu_kecil') {
+      drawRect(2, 8, 16, 16, C.stone); drawRect(0, 0, 20, 10, C.stoneDark);
+      drawRect(4, 2, 4, 3, C.red + '60'); drawRect(12, 2, 4, 3, C.red + '60');
+      if (e.isAttacking) drawRect(18, 6, 8, 4, C.stoneDark);
+    } else if (e.enemyType === 'patung') {
+      drawRect(4, 12, 20, 22, C.stone); drawRect(0, 0, 28, 14, C.stoneDark);
+      drawRect(2, 2, 24, 10, C.stone); drawRect(6, 3, 5, 4, C.red + '80'); drawRect(17, 3, 5, 4, C.red + '80');
+      drawRect(10, 8, 8, 2, C.stoneDark);
+      ctx.fillStyle = C.gold + '30'; ctx.fillRect(6, 14, 4, 4); ctx.fillRect(18, 14, 4, 4);
+      if (e.isAttacking) drawRect(26, 8, 10, 6, C.stone);
+    }
+    ctx.globalAlpha = 1; ctx.restore();
+    if (e.hp < e.maxHp) drawBar(ex, ey - 8, e.w, 4, e.hp / e.maxHp, '#333', C.red);
+  });
+}
+
+// ---- BOSS ----
+function drawBoss(boss, bossActive) {
+  if (!boss || !boss.alive || !bossActive) return;
+  const ctx = getCtx();
+  const bx = boss.x - camera.x;
+  const by = boss.y - camera.y;
+  ctx.save();
+  ctx.translate(bx + boss.w / 2, by + boss.h / 2);
+  ctx.scale(boss.facing, 1);
+  ctx.translate(-boss.w / 2, -boss.h / 2);
+  if (boss.hurtTimer > 0) ctx.globalAlpha = 0.6;
+  if (boss.isTelegraphing) {
+    const teleAlpha = 0.3 + Math.sin(gameTime * 0.3) * 0.15;
+    const teleColor = boss.phase === 3 ? C.red : C.orange;
+    ctx.fillStyle = teleColor + Math.floor(teleAlpha * 255).toString(16).padStart(2, '0');
+    ctx.fillRect(-6, -6, boss.w + 12, boss.h + 12);
+  }
+  if (boss.staggered) {
+    const stagAlpha = Math.sin(gameTime * 0.3) * 0.3 + 0.3;
+    ctx.fillStyle = `rgba(255, 215, 0, ${stagAlpha})`;
+    ctx.fillRect(-4, -4, boss.w + 8, boss.h + 8);
+  }
+  drawRect(4, 16, 40, 40, C.stone); drawRect(0, 8, 48, 12, C.stoneDark);
+  if (boss.staggered) { drawRect(8, 6, 32, 14, C.stoneDark); drawRect(12, 8, 24, 10, C.stone); }
+  else { drawRect(8, 0, 32, 14, C.stoneDark); drawRect(12, 2, 24, 10, C.stone); }
+  const eyeGlow = Math.sin(gameTime * 0.1) * 0.3 + 0.7;
+  ctx.fillStyle = boss.phase === 3 ? C.red : `rgba(255, 68, 68, ${eyeGlow})`;
+  ctx.fillRect(16, boss.staggered ? 10 : 4, 6, 4);
+  ctx.fillRect(28, boss.staggered ? 10 : 4, 6, 4);
+  drawRect(18, boss.staggered ? 14 : 9, 14, 3, C.stoneDark);
+  const armSwing = boss.isTelegraphing ? Math.sin(gameTime * 0.5) * 6 : 0;
+  const attackSwing = boss.recoveryTimer > BOSS_RECOVERY_FRAMES - 10 ? Math.sin((BOSS_RECOVERY_FRAMES - boss.recoveryTimer) * 0.8) * 10 : 0;
+  drawRect(-8, 20 + armSwing + attackSwing, 12, 24, C.stone);
+  drawRect(44, 20 - armSwing - attackSwing, 12, 24, C.stone);
+  ctx.fillStyle = C.gold + '30'; ctx.fillRect(16, 20, 16, 4); ctx.fillRect(20, 28, 8, 4);
+  ctx.fillStyle = C.red + '50'; ctx.fillRect(12, 30, 4, 6); ctx.fillRect(32, 30, 4, 6);
+  if (boss.phase >= 2) {
+    ctx.fillStyle = C.red + '30'; ctx.fillRect(0, 0, 48, 56);
+    ctx.strokeStyle = C.gold + '60'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(20, 16); ctx.lineTo(24, 30); ctx.lineTo(18, 40); ctx.stroke();
+  }
+  if (boss.phase === 3) {
+    const auraAlpha = 0.15 + Math.sin(gameTime * 0.15) * 0.1;
+    ctx.fillStyle = `rgba(255, 0, 0, ${auraAlpha})`;
+    ctx.fillRect(-8, -8, boss.w + 16, boss.h + 16);
+    ctx.strokeStyle = C.red + '80'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(10, 20); ctx.lineTo(15, 35); ctx.lineTo(10, 50); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(38, 18); ctx.lineTo(35, 32); ctx.lineTo(38, 48); ctx.stroke();
+  }
+  ctx.globalAlpha = 1; ctx.restore();
+}
+
+// ---- ITEMS ----
+function drawItems(entities) {
+  const ctx = getCtx();
+  entities.forEach(e => {
+    if (e.type !== 'item' || e.collected) return;
+    const ix = e.x - camera.x;
+    const iy = e.y - camera.y + Math.sin(gameTime * 0.05 + e.bobOffset) * 4;
+    ctx.fillStyle = C.gold + '15'; ctx.fillRect(ix - 4, iy - 4, e.w + 8, e.h + 8);
+    if (e.itemType === 'potion') {
+      drawRect(ix + 2, iy, 12, 14, C.green + '80'); drawRect(ix + 4, iy - 2, 8, 4, '#44AA44'); drawRect(ix + 6, iy - 4, 4, 3, '#44AA44');
+    } else if (e.itemType === 'kristal') {
+      ctx.fillStyle = C.cyan + 'AA'; ctx.beginPath();
+      ctx.moveTo(ix + 8, iy); ctx.lineTo(ix + 16, iy + 8); ctx.lineTo(ix + 8, iy + 16); ctx.lineTo(ix, iy + 8); ctx.fill();
+    } else if (e.itemType === 'kunci') {
+      drawRect(ix + 2, iy + 4, 12, 8, C.gold); drawRect(ix + 4, iy + 2, 8, 3, C.gold); drawRect(ix + 12, iy + 8, 4, 4, C.gold);
+    } else if (e.itemType === 'rupiah') {
+      drawRect(ix + 2, iy + 2, 12, 12, C.gold); ctx.fillStyle = C.goldDark;
+      ctx.font = '8px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('R', ix + 8, iy + 10);
+    }
+  });
+}
+
+// ---- NPC ----
+function drawNPCs(entities) {
+  entities.forEach(e => {
+    if (e.type !== 'npc') return;
+    const ctx = getCtx();
+    const nx = e.x - camera.x;
+    const ny = e.y - camera.y;
+    const bob = Math.sin(gameTime * 0.03 + e.bobOffset) * 2;
+    ctx.fillStyle = '#00000040'; ctx.fillRect(nx - 2, ny + e.h - 2, e.w + 4, 4);
+    drawRect(nx + 4, ny + 12 + bob, 16, 14, '#6B4226');
+    drawRect(nx + 2, ny + 8 + bob, 20, 8, '#8B6914');
+    drawRect(nx + 6, ny - 2 + bob, 12, 10, '#D4A574');
+    drawRect(nx + 5, ny - 5 + bob, 14, 5, '#3D2B1F');
+    ctx.fillStyle = '#000'; ctx.fillRect(nx + 9, ny + 1 + bob, 2, 2); ctx.fillRect(nx + 14, ny + 1 + bob, 2, 2);
+    ctx.fillRect(nx + 10, ny + 5 + bob, 4, 1);
+    drawText(e.name, nx + e.w / 2, ny - 14 + bob, 10, C.gold, 'center');
+    const dist = Math.abs((player.x + player.w / 2) - (e.x + e.w / 2));
+    if (dist < 60) drawText('[E] Bicara', nx + e.w / 2, ny - 26 + bob, 10, C.goldLight, 'center');
+  });
+}
+
+// ---- PUZZLE TRIGGERS ----
+function drawPuzzleTriggers(entities) {
+  entities.forEach(e => {
+    if (e.type !== 'puzzleTrigger') return;
+    const ctx = getCtx();
+    const px = e.x - camera.x;
+    const py = e.y - camera.y;
+    ctx.fillStyle = e.activated ? C.gold + '40' : C.gold + '15';
+    ctx.fillRect(px, py, e.w, e.h);
+    drawOutline(px, py, e.w, e.h, e.activated ? C.gold + '80' : C.gold + '30', 2);
+    if (!e.activated) {
+      drawRect(px + 12, py + 16, 8, 8, C.gold); drawRect(px + 10, py + 12, 12, 6, C.goldDark);
+      const dist = Math.abs((player.x + player.w / 2) - (e.x + e.w / 2));
+      if (dist < 50) drawText('[E] Puzzle', px + e.w / 2, py - 10, 10, C.goldLight, 'center');
+    } else {
+      drawRect(px + 4, py + 8, 24, 36, '#000');
+      ctx.fillStyle = C.goldLight + '20'; ctx.fillRect(px + 4, py + 4, 24, 40);
+    }
+  });
+}
+
+// ---- PARTICLES ----
+function drawParticles(particlesList, floatingTextsList) {
+  const ctx = getCtx();
+  particlesList.forEach(p => {
+    ctx.globalAlpha = p.life / p.maxLife;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - camera.x - p.size / 2, p.y - camera.y - p.size / 2, p.size, p.size);
+  });
+  ctx.globalAlpha = 1;
+  floatingTextsList.forEach(ft => {
+    ctx.globalAlpha = ft.life / 60;
+    drawText(ft.text, ft.x - camera.x, ft.y - camera.y, 12, ft.color, 'center');
+  });
+  ctx.globalAlpha = 1;
+}
+
+// ---- HUD ----
+function drawHUD(boss, bossActive, deathCount) {
+  drawRect(8, 8, 290, 42, '#00000080', 6);
+  drawText('HP', 14, 22, 11, C.textDim, 'left');
+  drawBar(30, 14, 120, 14, player.hp / player.maxHp, '#440000', C.red, 3);
+  drawText(`${Math.ceil(player.hp)}/${player.maxHp}`, 90, 22, 9, '#fff', 'center');
+  drawText('ST', 14, 38, 9, C.textDim, 'left');
+  const staminaColor = player.stamina < 20 ? C.red : C.stamina;
+  drawBar(30, 30, 120, 10, player.stamina / player.maxStamina, C.staminaDark, staminaColor, 2);
+  drawText(`${Math.ceil(player.stamina)}`, 90, 36, 8, player.stamina < 20 ? C.red : '#fff', 'center');
+  drawText('EN', 158, 30, 11, C.textDim, 'left');
+  drawBar(174, 22, 70, 14, player.energy / player.maxEnergy, '#003344', C.cyan, 3);
+  if (player.attacking || player.comboWindow > 0) {
+    const comboIdx = (player.attackCombo + 2) % 3;
+    drawText(`Combo: ${['1st', '2nd', '3rd'][comboIdx]}`, 158, 38, 9, comboIdx === 2 ? C.goldLight : C.gold, 'left');
+  }
+  drawRect(GAME_W - 200, 8, 192, 28, '#00000080', 6);
+  drawText(`Lv.${player.level}`, GAME_W - 190, 22, 12, C.gold, 'left');
+  drawText('EXP', GAME_W - 140, 22, 9, C.textDim, 'left');
+  drawBar(GAME_W - 118, 17, 60, 8, player.exp / player.expNext, '#1A1A00', C.gold + '80', 2);
+  drawText(`Artefak: ${player.artifacts}/5`, GAME_W - 50, 22, 11, C.gold, 'center');
+  drawRect(8, GAME_H - 36, 360, 28, '#00000080', 6);
+  drawText(`Ramuan: ${player.potions}`, 16, GAME_H - 22, 11, C.green, 'left');
+  drawText(`Kunci: ${player.keys}`, 110, GAME_H - 22, 11, C.gold, 'left');
+  drawText(`Rupiah: ${player.rupiah}`, 180, GAME_H - 22, 11, C.goldLight, 'left');
+  drawText(`Mati: ${deathCount}`, 280, GAME_H - 22, 11, C.red + '80', 'left');
+  drawRect(GAME_W / 2 - 40, GAME_H - 36, 80, 28, '#00000080', 6);
+  if (player.skillCooldown > 0) {
+    drawBar(GAME_W / 2 - 36, GAME_H - 32, 72, 20, 1 - player.skillCooldown / player.skillMaxCooldown, '#333', C.gold + '40', 4);
+    drawText(`${Math.ceil(player.skillCooldown / 60)}s`, GAME_W / 2, GAME_H - 22, 10, C.textDim, 'center');
+  } else { drawText('[Q] Skill', GAME_W / 2, GAME_H - 22, 10, C.gold, 'center'); }
+
+  if (bossActive && boss && boss.alive) {
+    const bw = 300, bx = GAME_W / 2 - bw / 2;
+    drawRect(bx, 56, bw, 24, '#000000A0', 4);
+    drawText('PENJAGA BATU', GAME_W / 2, 62, 9, C.red, 'center');
+    drawBar(bx + 4, 70, bw - 8, 6, boss.hp / boss.maxHp, '#440000', C.red, 2);
+    drawBar(bx + 4, 78, bw - 8, 3, boss.posture / boss.maxPosture, '#332200', C.gold + '80', 1);
+    drawText(`Phase ${boss.phase}/3`, GAME_W / 2 + bw / 2 + 20, 70, 9, C.red + '80', 'left');
+    if (boss.isTelegraphing) {
+      const warningAlpha = Math.sin(gameTime * 0.4) * 0.5 + 0.5;
+      drawText('!! BERSIAP !!', GAME_W / 2, 48, 14, `rgba(255, 100, 0, ${warningAlpha})`, 'center');
+    }
+    if (boss.staggered) drawText('STAGGERED!', GAME_W / 2, 92, 12, C.parryGold, 'center');
+  }
+
+  drawText('Candi Borobudur', GAME_W / 2, 22, 11, C.gold + '60', 'center');
+  drawText('WASD:Move  SPACE:Serang  F:Heavy  R:Parry  SHIFT:Dodge  Q:Skill  E:Interact/Heal', GAME_W / 2, GAME_H - 6, 8, C.textDim, 'center');
+}
+
+// ---- DIALOG ----
+function drawDialog() {
+  const dialog = getCurrentDialog();
+  if (!dialog) return;
+  const boxH = 100, boxY = GAME_H - boxH - 16;
+  drawRect(16, boxY, GAME_W - 32, boxH, '#0A0A0AE0', 8);
+  drawOutline(16, boxY, GAME_W - 32, boxH, C.gold + '40', 2, 8);
+  drawText(dialog.speaker, 32, boxY + 16, 13, C.gold, 'left');
+  const text = dialog.lines[dialog.lineIndex].substring(0, dialog.charIndex);
+  drawText(text, 32, boxY + 42, 12, C.text, 'left');
+  if (dialog.done) {
+    const alpha = Math.sin(gameTime * 0.1) * 0.3 + 0.7;
+    const ctx = getCtx(); ctx.globalAlpha = alpha;
+    drawText('[E/SPACE] Lanjut', GAME_W - 40, boxY + boxH - 16, 10, C.gold + '80', 'right');
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ---- MENU ----
+let menuSelection = 0;
+const menuItems = ['Mulai Permainan', 'Kontrol', 'Tentang'];
+let menuParticles = [];
+for (let i = 0; i < 30; i++) {
+  menuParticles.push({ x: Math.random() * GAME_W, y: Math.random() * GAME_H, size: Math.random() * 2 + 1, speed: Math.random() * 0.5 + 0.2, alpha: Math.random() * 0.5 + 0.2 });
+}
+let showControls = false;
+let showAbout = false;
+
+function drawMenu() {
+  const ctx = getCtx();
+  const grad = ctx.createLinearGradient(0, 0, 0, GAME_H);
+  grad.addColorStop(0, '#0A0A0A'); grad.addColorStop(0.5, '#0D0A1A'); grad.addColorStop(1, '#0A0A0A');
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, GAME_W, GAME_H);
+
+  menuParticles.forEach(p => {
+    p.y -= p.speed;
+    if (p.y < -10) { p.y = GAME_H + 10; p.x = Math.random() * GAME_W; }
+    ctx.fillStyle = C.gold + Math.floor(p.alpha * 255).toString(16).padStart(2, '0');
+    ctx.fillRect(p.x, p.y, p.size, p.size);
+  });
+
+  ctx.strokeStyle = C.gold + '20'; ctx.lineWidth = 1;
+  for (let i = 0; i < 5; i++) { const y = GAME_H / 2 - 60 + i * 40; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(GAME_W, y); ctx.stroke(); }
+
+  drawText('NUSANTARA', GAME_W / 2, 120, 56, C.gold, 'center');
+  drawText('WARISAN TERAKHIR', GAME_W / 2, 170, 22, C.goldLight + '80', 'center');
+  drawText('Souls-like Edition', GAME_W / 2, 195, 12, C.red + '60', 'center');
+
+  const dy = 215;
+  for (let i = 0; i < 3; i++) {
+    const ddx = GAME_W / 2 - 20 + i * 20;
+    ctx.fillStyle = C.gold + (i === 1 ? 'CC' : '44');
+    ctx.save(); ctx.translate(ddx, dy); ctx.rotate(Math.PI / 4); ctx.fillRect(-3, -3, 6, 6); ctx.restore();
+  }
+
+  if (!showControls && !showAbout) {
+    menuItems.forEach((item, i) => {
+      const y = 260 + i * 50;
+      const isSelected = i === menuSelection;
+      const w = 220, h = 40, x = GAME_W / 2 - w / 2;
+      if (isSelected) {
+        drawRect(x, y, w, h, C.gold + '15', 6); drawOutline(x, y, w, h, C.gold + '60', 2, 6);
+        drawText('◆', x - 20, y + h / 2, 12, C.gold, 'center');
+        drawText(item, GAME_W / 2, y + h / 2, 15, C.gold, 'center');
+      } else { drawText(item, GAME_W / 2, y + h / 2, 14, C.textDim, 'center'); }
+    });
+  }
+
+  if (showControls) {
+    drawRect(160, 60, GAME_W - 320, GAME_H - 120, '#0A0A0AE0', 8);
+    drawOutline(160, 60, GAME_W - 320, GAME_H - 120, C.gold + '30', 2, 8);
+    drawText('KONTROL', GAME_W / 2, 90, 20, C.gold, 'center');
+    const ctrls = [['W / ↑', 'Lompat'], ['A D / ← →', 'Gerak kiri/kanan'], ['SPACE', 'Serang Ringan (Combo 3x)'], ['F', 'Serang Berat'], ['R', 'Parry / Menangkis'], ['SHIFT', 'Dodge / Berguling'], ['Q', 'Skill Spesial'], ['E', 'Interaksi / Minum Ramuan'], ['ESC', 'Kembali ke Menu']];
+    ctrls.forEach((c, i) => { drawText(c[0], 220, 130 + i * 32, 13, C.gold, 'left'); drawText(c[1], 460, 130 + i * 32, 13, C.text, 'left'); });
+    drawText('TIPS KOMBAT', GAME_W / 2, 435, 14, C.gold, 'center');
+    drawText('Tekan SPACE berulang untuk combo 3 hit!  |  Parry tepat waktu untuk stagger musuh!', GAME_W / 2, 455, 10, C.text + '80', 'center');
+    drawText('[ESC] Kembali', GAME_W / 2, 495, 12, C.textDim, 'center');
+  }
+
+  if (showAbout) {
+    drawRect(180, 80, GAME_W - 360, GAME_H - 160, '#0A0A0AE0', 8);
+    drawOutline(180, 80, GAME_W - 360, GAME_H - 160, C.gold + '30', 2, 8);
+    drawText('TENTANG GAME', GAME_W / 2, 115, 20, C.gold, 'center');
+    const lines = ['NUSANTARA: Warisan Terakhir', 'Adventure RPG + Puzzle bertema mitologi Nusantara', '', 'Konsep Game Digital — UTS Semester Genap 2025/2026', 'STMIK AMIKOM Surakarta', 'Dosen: Syams Kurniawan Hidayat, ST.,M.Kom.', '', 'Platform: HTML5 + JavaScript (Web Browser)', 'Genre: Adventure RPG + Puzzle (Souls-like Combat)'];
+    lines.forEach((l, i) => drawText(l, GAME_W / 2, 155 + i * 22, i === 0 ? 14 : 12, i === 0 ? C.gold : C.text + 'AA', 'center'));
+    drawText('[ESC] Kembali', GAME_W / 2, GAME_H - 110, 12, C.textDim, 'center');
+  }
+
+  drawText('v0.4 — Modular Edition', GAME_W / 2, GAME_H - 30, 9, C.textDim, 'center');
+
+  if (justPressed('ArrowUp') || justPressed('KeyW')) menuSelection = (menuSelection - 1 + menuItems.length) % menuItems.length;
+  if (justPressed('ArrowDown') || justPressed('KeyS')) menuSelection = (menuSelection + 1) % menuItems.length;
+  if (justPressed('Escape')) { showControls = false; showAbout = false; }
+  if (justPressed('Space') || justPressed('Enter') || mouse.clicked) {
+    if (showControls || showAbout) { /* ESC handles */ }
+    else if (menuSelection === 0) return 'startGame';
+    else if (menuSelection === 1) showControls = true;
+    else if (menuSelection === 2) showAbout = true;
+    mouse.clicked = false;
+  }
+  return null;
+}
+
+// ---- PUZZLE ----
+function drawPuzzle(pState, gainExpFn) {
+  const ctx = getCtx();
+  drawRect(0, 0, GAME_W, GAME_H, '#000000CC');
+  drawText('PUZZLE STUPA BOROBUDUR', GAME_W / 2, 60, 20, C.gold, 'center');
+  drawText('Ulangi urutan simbol elemen!', GAME_W / 2, 85, 12, C.textDim, 'center');
+  drawRect(40, 120, GAME_W - 80, 300, '#0A0A0A90', 8);
+  drawOutline(40, 120, GAME_W - 80, 300, C.gold + '30', 2, 8);
+
+  if (pState.showingSequence) {
+    pState.showTimer++;
+    if (pState.showTimer > 40) { pState.showTimer = 0; pState.showIndex++; if (pState.showIndex >= pState.sequence.length) pState.showingSequence = false; }
+    if (pState.showIndex < pState.sequence.length) {
+      drawText(pState.symbols[pState.sequence[pState.showIndex]], GAME_W / 2, 240, 60, '#fff', 'center');
+      drawText(`Urutan ${pState.showIndex + 1}/5`, GAME_W / 2, 290, 14, C.textDim, 'center');
+    }
+  } else if (pState.solved) {
+    drawText('PUZZLE SELESAI!', GAME_W / 2, 240, 28, C.green, 'center');
+    drawText('[E] Lanjutkan', GAME_W / 2, 290, 14, C.gold, 'center');
+    if (justPressed('KeyE') || justPressed('Space')) { playSound('pickup'); gainExpFn(30); return 'continue'; }
+  } else if (pState.failed) {
+    drawText('GAGAL! Coba lagi...', GAME_W / 2, 240, 24, C.red, 'center');
+    pState.failTimer++;
+    if (pState.failTimer > 60) { pState.playerSeq = []; pState.failed = false; pState.failTimer = 0; pState.showingSequence = true; pState.showIndex = 0; pState.showTimer = 0; }
+  } else {
+    pState.buttons.forEach((btn, i) => {
+      const isHighlighted = pState.highlight === i;
+      const isHovered = mouse.x >= btn.x && mouse.x <= btn.x + btn.w && mouse.y >= btn.y && mouse.y <= btn.y + btn.h;
+      drawRect(btn.x, btn.y, btn.w, btn.h, isHighlighted ? C.gold + '40' : (isHovered ? C.gold + '20' : '#1A1A0A'), 8);
+      drawOutline(btn.x, btn.y, btn.w, btn.h, isHighlighted ? C.gold : C.gold + '30', 2, 8);
+      drawText(btn.symbol, btn.x + btn.w / 2, btn.y + btn.h / 2 - 5, 28, '#fff', 'center');
+      if ((isHovered && mouse.clicked) || justPressed(`Digit${i + 1}`)) {
+        pState.highlight = i; pState.highlightTimer = 15;
+        pState.playerSeq.push(i); playSound('dialog');
+        const idx = pState.playerSeq.length - 1;
+        if (pState.playerSeq[idx] !== pState.sequence[idx]) { pState.failed = true; pState.failTimer = 0; playSound('damage'); }
+        else if (pState.playerSeq.length === pState.sequence.length) { pState.solved = true; playSound('puzzle'); }
+      }
+    });
+    if (pState.highlightTimer > 0) { pState.highlightTimer--; if (pState.highlightTimer <= 0) pState.highlight = -1; }
+    drawText(`Urutan: ${pState.playerSeq.length}/5`, GAME_W / 2, 360, 14, C.text, 'center');
+  }
+  mouse.clicked = false;
+  return null;
+}
+
+// ---- BOSS INTRO ----
+let bossIntroTimer = 0;
+function resetBossIntroTimer() { bossIntroTimer = 0; }
+
+function drawBossIntro(tileMap) {
+  const ctx = getCtx();
+  bossIntroTimer++;
+  drawBackground(); drawLevel(tileMap);
+  const progress = bossIntroTimer / 120;
+  drawRect(0, 0, GAME_W, GAME_H, `rgba(0,0,0,${Math.min(0.7, progress)})`);
+  if (bossIntroTimer > 30) {
+    const alpha = Math.min(1, (bossIntroTimer - 30) / 30);
+    ctx.globalAlpha = alpha;
+    drawText('PENJAGA BATU', GAME_W / 2, GAME_H / 2 - 40, 36, C.red, 'center');
+    drawText('Mini-Boss Level 1 — Candi Borobudur', GAME_W / 2, GAME_H / 2, 14, C.textDim, 'center');
+    drawText('Serang dengan combo untuk mengisi Posture bar!', GAME_W / 2, GAME_H / 2 + 30, 12, C.gold + '80', 'center');
+    drawText('Parry serangannya untuk stagger dia! (R)', GAME_W / 2, GAME_H / 2 + 50, 12, C.gold + '60', 'center');
+    ctx.globalAlpha = 1;
+  }
+  if (bossIntroTimer > 120) return 'finish';
+  return null;
+}
+
+// ---- GAME OVER ----
+let gameOverTimer = 0;
+function resetGameOverTimer() { gameOverTimer = 0; }
+
+function drawGameOver(deathCount) {
+  const ctx = getCtx();
+  gameOverTimer++;
+  const fadeAlpha = Math.min(1, gameOverTimer / 60);
+  drawRect(0, 0, GAME_W, GAME_H, `rgba(0,0,0,${fadeAlpha * 0.85})`);
+  if (gameOverTimer > 20) {
+    const textAlpha = Math.min(1, (gameOverTimer - 20) / 80);
+    ctx.globalAlpha = textAlpha;
+    drawText('KAMU MATI', GAME_W / 2, GAME_H / 2 - 40, 48, C.red, 'center');
+    drawText(`Kematian ke-${deathCount}`, GAME_W / 2, GAME_H / 2 + 10, 14, C.textDim, 'center');
+    ctx.globalAlpha = 1;
+  }
+  if (gameOverTimer > 90) {
+    const optAlpha = Math.min(1, (gameOverTimer - 90) / 30);
+    ctx.globalAlpha = optAlpha;
+    drawText('[SPACE] Bangkit Kembali', GAME_W / 2, GAME_H / 2 + 55, 14, C.gold, 'center');
+    drawText('[ESC] Menu Utama', GAME_W / 2, GAME_H / 2 + 80, 12, C.textDim, 'center');
+    ctx.globalAlpha = 1;
+  }
+  if (justPressed('Space') && gameOverTimer > 90) return 'respawn';
+  if (justPressed('Escape') && gameOverTimer > 90) return 'menu';
+  return null;
+}
+
+// ---- VICTORY ----
+function drawVictory(deathCount) {
+  const ctx = getCtx();
+  drawRect(0, 0, GAME_W, GAME_H, '#0A0A0A');
+  for (let i = 0; i < 20; i++) {
+    const x = (i * 137 + gameTime * 0.5) % GAME_W;
+    const y = (i * 97 + gameTime * 0.3) % GAME_H;
+    ctx.fillStyle = C.gold + '40'; ctx.fillRect(x, y, 2, 2);
+  }
+  drawText('ARTEFAK TANAH', GAME_W / 2, 120, 28, C.gold, 'center');
+  drawText('DIDAPATKAN!', GAME_W / 2, 160, 36, C.goldLight, 'center');
+  drawRect(GAME_W / 2 - 30, 190, 60, 60, '#1A1A0A', 8);
+  drawOutline(GAME_W / 2 - 30, 190, 60, 60, C.gold, 2, 8);
+  drawText('💎', GAME_W / 2, 220, 30, '#fff', 'center');
+  drawText('Penjaga Batu telah dikalahkan!', GAME_W / 2, 280, 14, C.text, 'center');
+  drawText('Arjuna mendapatkan Artefak Tanah — elemen pertama', GAME_W / 2, 305, 12, C.textDim, 'center');
+  drawText(`Level: ${player.level}  |  HP: ${Math.ceil(player.hp)}  |  Rupiah: ${player.rupiah}  |  Kematian: ${deathCount}`, GAME_W / 2, 370, 12, C.gold + '80', 'center');
+  drawText('[SPACE] Lanjutkan Petualangan', GAME_W / 2, 420, 14, C.gold, 'center');
+  drawText('[ESC] Menu Utama', GAME_W / 2, 445, 12, C.textDim, 'center');
+  if (justPressed('Escape')) return 'menu';
+  if (justPressed('Space')) return 'menu';
+  return null;
+}
+
+// ============================================================
+// game.js — Main game state machine, initialization, and loop
+// ============================================================
+
+// ---- Shared mutable state ----
+const gameState = { value: 'menu' };
+const hitStop = { value: 0 };
+const shake = { timer: 0, intensity: 0 };
+const parryFlash = { timer: 0 };
+const deathCount = { value: 0 };
+
+// Wire up state refs for player module
+setStateRefs(gameState, hitStop, shake, parryFlash, deathCount);
+
+// ---- Game-level variables ----
+let gameGameTime = 0;
+let entities = [];
+let gameTileMap = [];
+let boss = null;
+let bossActive = false;
+let puzzleSolved = false;
+
+// ---- Canvas setup ----
+const canvas = document.getElementById('gameCanvas');
+const canvasCtx = canvas.getContext('2d');
+const loading = document.getElementById('loading');
+initRenderer(canvasCtx);
+setupInput(canvas);
+
+function resize() {
+  const ratio = GAME_W / GAME_H;
+  let w = window.innerWidth, h = window.innerHeight;
+  if (w / h > ratio) w = h * ratio; else h = w / ratio;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  canvas.width = GAME_W;
+  canvas.height = GAME_H;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ---- Game init ----
+function startGame() {
+  initAudio();
+  gameState.value = 'playing';
+  gameTileMap = generateLevel1();
+  setTileMap(gameTileMap);
+  entities = spawnEntities();
+  boss = createBoss(73, 18 - 6);
+  bossActive = false;
+  resetPuzzle();
+  puzzleSolved = false;
+  resetPlayer();
+  camera.x = 0; camera.y = 0;
+  clearParticles();
+  hitStop.value = 0;
+  parryFlash.timer = 0;
+
+  // Intro dialog
+  doStartDialog('Candra Kirana', [
+    'Arjuna... kamu telah memilih untuk memulai perjalanan ini.',
+    'Candi Borobudur adalah tempat pertamamu.',
+    'Artefak Tanah tersembunyi di dalam candi ini, dijaga oleh Penjaga Batu.',
+    'Gunakan kerisku untuk melawan, dan cari jalan melalui puzzle kuno.',
+    'Semoga leluhur membimbingmu, Anak Jawa.',
+  ]);
+}
+
+function doStartDialog(speaker, lines) {
+  startDialog(speaker, lines);
+  gameState.value = 'dialog';
+}
+
+function initPuzzleInternal() {
+  initPuzzle();
+  gameState.value = 'puzzle';
+}
+
+function showBossIntro() {
+  gameState.value = 'bossIntro';
+  resetBossIntroTimer();
+}
+
+// ---- MAIN GAME LOOP ----
+function gameLoop() {
+  gameGameTime++;
+  setGameTime(gameGameTime);
+
+  if (hitStop.value > 0) hitStop.value--;
+  if (parryFlash.timer > 0) parryFlash.timer--;
+
+  let shakeX = 0, shakeY = 0;
+  if (shake.timer > 0) {
+    shake.timer--;
+    shakeX = (Math.random() - 0.5) * shake.intensity * 2;
+    shakeY = (Math.random() - 0.5) * shake.intensity * 2;
+  }
+
+  canvasCtx.save();
+  canvasCtx.translate(shakeX, shakeY);
+
+  switch (gameState.value) {
+    case 'menu': {
+      const result = drawMenu();
+      if (result === 'startGame') startGame();
+      break;
+    }
+
+    case 'playing': {
+      const triggerBoss = updatePlayer(keys, entities, boss, bossActive, getPuzzleState(), gameTileMap, doStartDialog, initPuzzleInternal);
+      if (triggerBoss === 'triggerBoss') {
+        bossActive = true;
+        playSound('boss');
+        showBossIntro();
+      }
+      updateEnemies(entities, hitStop.value, player);
+      updateBoss(boss, bossActive, hitStop.value, player);
+      updateParticles(hitStop.value, player, damagePlayer);
+      updateCamera(player, gameTileMap);
+
+      drawBackground();
+      drawLevel(gameTileMap);
+      drawItems(entities);
+      drawPuzzleTriggers(entities);
+      drawNPCs(entities);
+      drawEnemies(entities);
+      drawBoss(boss, bossActive);
+      drawPlayer(parryFlash.timer);
+      drawParticles(particles, floatingTexts);
+      drawHUD(boss, bossActive, deathCount.value);
+
+      const ps = getPuzzleState();
+      if (ps && ps.solved) puzzleSolved = true;
+      break;
+    }
+
+    case 'dialog': {
+      const result = updateDialog();
+      if (result && result.done) {
+        gameState.value = 'playing';
+        if (result.callback) result.callback();
+      }
+
+      drawBackground();
+      drawLevel(gameTileMap);
+      drawItems(entities);
+      drawPuzzleTriggers(entities);
+      drawNPCs(entities);
+      drawEnemies(entities);
+      drawBoss(boss, bossActive);
+      drawPlayer(parryFlash.timer);
+      drawHUD(boss, bossActive, deathCount.value);
+      drawDialog();
+      break;
+    }
+
+    case 'puzzle': {
+      updateParticles(hitStop.value, player, damagePlayer);
+      drawBackground();
+      drawLevel(gameTileMap);
+      drawPlayer(parryFlash.timer);
+      drawHUD(boss, bossActive, deathCount.value);
+      const puzzleResult = drawPuzzle(getPuzzleState(), gainExp);
+      if (puzzleResult === 'continue') {
+        gameState.value = 'playing';
+        if (getPuzzleState()) getPuzzleState().solved = true;
+        puzzleSolved = true;
+      }
+      break;
+    }
+
+    case 'bossIntro': {
+      const introResult = drawBossIntro(gameTileMap);
+      if (introResult === 'finish') gameState.value = 'playing';
+      break;
+    }
+
+    case 'gameOver': {
+      drawBackground();
+      drawLevel(gameTileMap);
+      const goResult = drawGameOver(deathCount.value);
+      if (goResult === 'respawn') {
+        respawnPlayer();
+        entities = spawnEntities();
+        boss = createBoss(73, 18 - 6);
+        bossActive = false;
+        resetGameOverTimer();
+      }
+      if (goResult === 'menu') gameState.value = 'menu';
+      break;
+    }
+
+    case 'victory': {
+      const vicResult = drawVictory(deathCount.value);
+      if (vicResult === 'menu') gameState.value = 'menu';
+      break;
+    }
+  }
+
+  canvasCtx.restore();
+  savePrevKeys();
+  requestAnimationFrame(gameLoop);
+}
+
+// ---- START ----
+loading.style.display = 'none';
+gameLoop();
+</script>
 </body>
 </html>
