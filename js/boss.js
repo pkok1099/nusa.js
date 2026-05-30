@@ -45,6 +45,18 @@ export function updateBoss(boss, bossActive, hitStopTimer, player) {
   else if (hpPct > 0.33) boss.phase = 2;
   else boss.phase = 3;
 
+  // Souls-like v0.7.1: Phase 2 transition (dramatic pause at 50% HP)
+  if (boss.phase >= 2 && !boss.phase2Transitioned) {
+    boss.phase2Transitioned = true;
+    boss.recoveryTimer = 60; // Long pause for dramatic effect
+    boss.isTelegraphing = false;
+    // Visual: burst of particles + screen shake
+    spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 2, C.red, 30, 8, 50);
+    spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 2, C.goldLight, 20, 6, 40);
+    spawnFloatingText(boss.x + boss.w / 2, boss.y - 30, 'PHASE 2!', C.red);
+    playSound('boss');
+  }
+
   // Recovery
   if (boss.recoveryTimer > 0) {
     boss.recoveryTimer--;

@@ -45,6 +45,10 @@ export function updateEnemies(entities, hitStopTimer, player) {
     e.vy += GRAVITY;
     if (e.vy > MAX_FALL) e.vy = MAX_FALL;
 
+    // Souls-like v0.7.1: Aggro detection
+    const distToPlayer = Math.abs((player.x + player.w / 2) - (e.x + e.w / 2));
+    e.isAggroed = distToPlayer < (e.aggroRadius || 200);
+
     // Dispatch by enemy type
     switch (e.enemyType) {
       case 'batu_kecil': updateBatuKecil(e, player); break;
@@ -142,6 +146,7 @@ function executeMeleeHit(e, player, damage) {
 
 // ---- batu_kecil: simple patrol + attack (existing) ----
 function updateBatuKecil(e, player) {
+  if (!e.isAggroed) { patrolEnemy(e); return; }
   if (e.isTelegraphing) {
     e.telegraphTimer--;
     if (e.telegraphTimer <= 0) {
@@ -162,6 +167,7 @@ function updateBatuKecil(e, player) {
 
 // ---- patung: slow patrol + telegraph attack (existing) ----
 function updatePatung(e, player) {
+  if (!e.isAggroed) { patrolEnemy(e); return; }
   if (e.isTelegraphing) {
     e.telegraphTimer--;
     if (e.telegraphTimer <= 0) {
@@ -182,6 +188,7 @@ function updatePatung(e, player) {
 
 // ---- harimau: fast, pounces from distance, low HP ----
 function updateHarimau(e, player) {
+  if (!e.isAggroed) { patrolEnemy(e); return; }
   const dist = distToPlayer(e, player);
   facePlayer(e, player);
 
@@ -224,6 +231,7 @@ function updateHarimau(e, player) {
 
 // ---- ular: slow, attacks apply "poison" (damage over time) ----
 function updateUlar(e, player) {
+  if (!e.isAggroed) { patrolEnemy(e); return; }
   if (e.isTelegraphing) {
     e.telegraphTimer--;
     e.vx = 0;
@@ -255,6 +263,7 @@ function updateUlar(e, player) {
 
 // ---- iblis_kecil: keeps distance, throws fireballs (projectiles) ----
 function updateIblisKecil(e, player) {
+  if (!e.isAggroed) { patrolEnemy(e); return; }
   const dist = distToPlayer(e, player);
   facePlayer(e, player);
 
@@ -299,6 +308,7 @@ function updateIblisKecil(e, player) {
 
 // ---- golem_api: slow, tanky, ground pound AOE ----
 function updateGolemApi(e, player) {
+  if (!e.isAggroed) { patrolEnemy(e); return; }
   const dist = distToPlayer(e, player);
 
   if (e.isTelegraphing) {
@@ -337,6 +347,7 @@ function updateGolemApi(e, player) {
 
 // ---- ikan_pedang: fast swimmer, dash attack ----
 function updateIkanPedang(e, player) {
+  if (!e.isAggroed) { patrolEnemy(e); return; }
   const dist = distToPlayer(e, player);
   facePlayer(e, player);
 
@@ -399,6 +410,7 @@ function updateUburUbur(e, player) {
 
 // ---- prajurit_jahat: sword combo (like player), blocks sometimes ----
 function updatePrajuritJahat(e, player) {
+  if (!e.isAggroed) { patrolEnemy(e); return; }
   const dist = distToPlayer(e, player);
 
   if (e.blockTimer > 0) {
@@ -452,6 +464,7 @@ function updatePrajuritJahat(e, player) {
 
 // ---- raksasa_kecil: throws rocks from distance ----
 function updateRaksasaKecil(e, player) {
+  if (!e.isAggroed) { patrolEnemy(e); return; }
   const dist = distToPlayer(e, player);
   facePlayer(e, player);
 

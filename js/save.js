@@ -27,6 +27,8 @@ export function saveGame(player, inventory, unlockedStages, deathCount, currentS
         rallyHp: player.rallyHp,
         rallyTimer: player.rallyTimer,
         poise: player.poise,
+        // Souls-like v0.7.1: Hollowing
+        hollowing: player.hollowing,
       },
       inventory: {
         items: inventory.items.map(item => ({ ...item })),

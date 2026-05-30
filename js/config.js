@@ -255,6 +255,21 @@ export const WEAPON_ART_STAMINA_COST = 30;
 export const WEAPON_ART_ENERGY_COST = 20;
 export const WEAPON_ART_COOLDOWN = 180; // 3 second cooldown between weapon arts
 
+// Hollowing system (Souls-like: consecutive deaths reduce max HP)
+export const HOLLOWING_HP_PENALTY = 0.05; // 5% max HP reduction per hollowing level
+export const HOLLOWING_MAX_LEVEL = 10;     // Max hollowing levels
+export const HOLLOWING_MIN_HP_PCT = 0.50;  // Minimum 50% of base HP
+
+// Visceral Attack (Souls-like: critical hit after parry, like Bloodborne)
+export const VISCERAL_WINDOW = 30;       // Frames after parry to input visceral
+export const VISCERAL_DAMAGE_MULT = 4.0; // 4x damage on visceral attack
+export const VISCERAL_RANGE = 60;        // Range of visceral attack
+export const VISCERAL_DURATION = 20;     // Animation duration
+
+// Two-handing (Souls-like: hold weapon with both hands for damage bonus)
+export const TWO_HAND_DAMAGE_MULT = 1.30;  // +30% damage when two-handing
+export const TWO_HAND_STAMINA_PENALTY = 0.15; // +15% stamina cost when two-handing
+
 // Weapon Art definitions: { name, type, damage_mult, range, duration, desc }
 export const WEAPON_ARTS = {
   keris:      { name: 'Tusukan Maut', type: 'thrust', damageMult: 2.5, range: 70, duration: 18, desc: 'Tusukan cepat dengan keris' },

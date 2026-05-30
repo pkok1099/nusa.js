@@ -6,16 +6,16 @@ import { TILE, BOSS_MAX_POSTURE, STAGES } from './config.js';
 
 // Enemy stat definitions per type
 const ENEMY_DEFS = {
-  batu_kecil:    { w: 20, h: 24, hp: 20, speed: 1, damage: 10, contactDmg: 5, exp: 10, rupiahDrop: 10 },
-  patung:        { w: 28, h: 34, hp: 35, speed: 1.5, damage: 15, contactDmg: 8, exp: 20, rupiahDrop: 15 },
-  harimau:       { w: 30, h: 22, hp: 25, speed: 2.5, damage: 18, contactDmg: 10, exp: 15, rupiahDrop: 15 },
-  ular:          { w: 24, h: 16, hp: 18, speed: 0.8, damage: 12, contactDmg: 5, exp: 12, rupiahDrop: 10 },
-  iblis_kecil:   { w: 20, h: 24, hp: 22, speed: 1.2, damage: 14, contactDmg: 5, exp: 18, rupiahDrop: 20 },
-  golem_api:     { w: 32, h: 36, hp: 60, speed: 0.6, damage: 20, contactDmg: 12, exp: 25, rupiahDrop: 25 },
-  ikan_pedang:   { w: 24, h: 18, hp: 20, speed: 3.0, damage: 16, contactDmg: 8, exp: 14, rupiahDrop: 12 },
-  ubur_ubur:     { w: 22, h: 28, hp: 15, speed: 0.3, damage: 10, contactDmg: 6, exp: 10, rupiahDrop: 8 },
-  prajurit_jahat: { w: 24, h: 34, hp: 40, speed: 1.8, damage: 20, contactDmg: 10, exp: 22, rupiahDrop: 20 },
-  raksasa_kecil: { w: 28, h: 32, hp: 50, speed: 1.0, damage: 22, contactDmg: 12, exp: 20, rupiahDrop: 25 },
+  batu_kecil:    { w: 20, h: 24, hp: 20, speed: 1, damage: 10, contactDmg: 5, exp: 10, rupiahDrop: 10, aggroRadius: 150 },
+  patung:        { w: 28, h: 34, hp: 35, speed: 1.5, damage: 15, contactDmg: 8, exp: 20, rupiahDrop: 15, aggroRadius: 120 },
+  harimau:       { w: 30, h: 22, hp: 25, speed: 2.5, damage: 18, contactDmg: 10, exp: 15, rupiahDrop: 15, aggroRadius: 250 },
+  ular:          { w: 24, h: 16, hp: 18, speed: 0.8, damage: 12, contactDmg: 5, exp: 12, rupiahDrop: 10, aggroRadius: 100 },
+  iblis_kecil:   { w: 20, h: 24, hp: 22, speed: 1.2, damage: 14, contactDmg: 5, exp: 18, rupiahDrop: 20, aggroRadius: 200 },
+  golem_api:     { w: 32, h: 36, hp: 60, speed: 0.6, damage: 20, contactDmg: 12, exp: 25, rupiahDrop: 25, aggroRadius: 130 },
+  ikan_pedang:   { w: 24, h: 18, hp: 20, speed: 3.0, damage: 16, contactDmg: 8, exp: 14, rupiahDrop: 12, aggroRadius: 180 },
+  ubur_ubur:     { w: 22, h: 28, hp: 15, speed: 0.3, damage: 10, contactDmg: 6, exp: 10, rupiahDrop: 8, aggroRadius: 60 },
+  prajurit_jahat: { w: 24, h: 34, hp: 40, speed: 1.8, damage: 20, contactDmg: 10, exp: 22, rupiahDrop: 20, aggroRadius: 200 },
+  raksasa_kecil: { w: 28, h: 32, hp: 50, speed: 1.0, damage: 22, contactDmg: 12, exp: 20, rupiahDrop: 25, aggroRadius: 220 },
 };
 
 // Stage-appropriate equipment drop tables
@@ -77,6 +77,9 @@ export function createEnemy(x, y, type) {
     stunTimer: 0,         // for ubur_ubur stun
     blockTimer: 0,        // for prajurit_jahat blocking
     rockTimer: 0,         // for raksasa_kecil rock throw
+    // Souls-like v0.7.1: Aggro system
+    aggroRadius: def.aggroRadius || 200,
+    isAggroed: false,
   };
 }
 
@@ -131,6 +134,8 @@ export function createBoss(x, y, stageId) {
     // BUG FIX v0.6.2: Frame-based combo tracking (replaces setTimeout)
     comboHits: 0,
     comboHitTimer: 0,
+    // Souls-like v0.7.1: Phase 2 transition flag
+    phase2Transitioned: false,
   };
 }
 

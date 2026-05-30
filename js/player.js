@@ -30,6 +30,10 @@ import {
   PLAYER_MAX_POISE, PLAYER_POISE_REGEN, PLAYER_POISE_REGEN_COMBAT, PLAYER_STAGGER_DURATION,
   STAMINA_EXHAUST_DURATION,
   WEAPON_ART_STAMINA_COST, WEAPON_ART_ENERGY_COST, WEAPON_ART_COOLDOWN, WEAPON_ARTS,
+  // Souls-like system v0.7.1 (hollowing, visceral, two-handing)
+  HOLLOWING_HP_PENALTY, HOLLOWING_MAX_LEVEL, HOLLOWING_MIN_HP_PCT,
+  VISCERAL_WINDOW, VISCERAL_DAMAGE_MULT, VISCERAL_RANGE, VISCERAL_DURATION,
+  TWO_HAND_DAMAGE_MULT, TWO_HAND_STAMINA_PENALTY,
 } from './config.js';
 import { playSound } from './audio.js';
 import { justPressed, keys as inputKeys } from './input.js';
@@ -89,6 +93,12 @@ export const player = {
   // Souls-like: Bloodstain (recover lost Rupiah by reaching death location)
   bloodstain: null, // { x, y, rupiah } or null
   lostRupiah: 0,
+  // Souls-like v0.7.1: Hollowing (consecutive deaths reduce max HP)
+  hollowing: 0,
+  // Souls-like v0.7.1: Visceral Attack (critical after parry)
+  visceralActive: false, visceralTimer: 0, visceralWindow: 0,
+  // Souls-like v0.7.1: Two-handing toggle
+  twoHanding: false,
   // Souls-like: Stamina regeneration delay
   staminaRegenDelay: 0,
   // Souls-like: Dodge i-frame counter
@@ -234,7 +244,8 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
   const stats = getStats();
 
   // Apply max stats from equipment/buffs
-  const effectiveMaxHp = stats.maxHp;
+  // Souls-like v0.7.1: Hollowing reduces effective max HP
+  let effectiveMaxHp = Math.floor(stats.maxHp * Math.max(HOLLOWING_MIN_HP_PCT, 1 - player.hollowing * HOLLOWING_HP_PENALTY));
   const effectiveMaxStamina = stats.maxStamina;
   const effectiveMaxEnergy = stats.maxEnergy;
 
@@ -254,6 +265,21 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
 
   // ---- WEAPON ART COOLDOWN v0.7.1 ----
   if (player.weaponArtCooldown > 0) player.weaponArtCooldown--;
+
+  // ---- VISCERAL WINDOW COUNTDOWN v0.7.1 ----
+  if (player.visceralWindow > 0) player.visceralWindow--;
+
+  // ---- VISCERAL ATTACK ANIMATION v0.7.1 ----
+  if (player.visceralActive) {
+    player.visceralTimer--;
+    player.vx = player.facing * 3; // Lunge forward
+    if (player.visceralTimer <= 0) {
+      player.visceralActive = false;
+    }
+    player.prevY = player.y;
+    applyGravityAndCollision(tileMap);
+    return;
+  }
 
   // ---- WEAPON ART EXECUTION v0.7.1 ----
   if (player.weaponArtActive) {
@@ -365,7 +391,9 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
         y: player.y - 10, w: ATTACK_RANGE + 10, h: player.h + 20,
       };
       playSound('heavyAttack');
-      const totalDmg = HEAVY_ATTACK_DAMAGE + player.level * 3 + stats.attack;
+      let totalDmg = HEAVY_ATTACK_DAMAGE + player.level * 3 + stats.attack;
+      // Souls-like v0.7.1: Two-handing damage bonus
+      if (player.twoHanding) totalDmg = Math.floor(totalDmg * TWO_HAND_DAMAGE_MULT);
       entities.forEach(e => {
         if (e.type === 'enemy' && e.alive && rectsOverlapAtk(atkBox, e))
           damageEnemy(e, totalDmg, entities);
@@ -411,8 +439,54 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
     }
   }
 
+  // ==== TWO-HANDING TOGGLE v0.7.1 (H) ====
+  if (justPressed('KeyH') && !player.dodging && !player.attacking && !player.heavyAttacking && !player.healing && !player.weaponArtActive) {
+    player.twoHanding = !player.twoHanding;
+    spawnFloatingText(player.x + player.w / 2, player.y - 30,
+      player.twoHanding ? 'Dua Tangan!' : 'Satu Tangan',
+      player.twoHanding ? C.parryGold : C.textDim);
+    playSound('parry');
+  }
+
   // ==== LIGHT ATTACK (SPACE) ====
   if (justPressed('Space') && !player.dodging && !player.heavyAttacking && !player.healing && player.parryTimer <= 0) {
+    // Souls-like v0.7.1: Visceral Attack after parry
+    if (player.visceralWindow > 0 && !player.dodging && !player.heavyAttacking && !player.healing && player.parryTimer <= 0) {
+      const stats = getStats();
+      const visceralDmg = (stats.attack + player.level * 5) * VISCERAL_DAMAGE_MULT;
+      const atkBox = {
+        x: player.facing > 0 ? player.x + player.w : player.x - VISCERAL_RANGE,
+        y: player.y - 10, w: VISCERAL_RANGE, h: player.h + 20,
+      };
+      player.visceralActive = true;
+      player.visceralTimer = VISCERAL_DURATION;
+      player.visceralWindow = 0;
+      player.attacking = false;
+      player.comboWindow = 0;
+      player.attackCombo = 0;
+      playSound('heavyAttack');
+      spawnFloatingText(player.x + player.w / 2, player.y - 40, 'VISCERAL!', C.parryGold);
+      spawnParticle(player.x + player.w / 2 + player.facing * 20, player.y + player.h / 2, C.parryGold, 25, 8, 35);
+      shakeRef.timer = 8; shakeRef.intensity = SCREEN_SHAKE_CRIT;
+      hitStopRef.value = HIT_STOP_PARRY;
+      entities.forEach(e => {
+        if (e.type === 'enemy' && e.alive && rectsOverlapAtk(atkBox, e)) {
+          let dmg = e.staggered ? Math.floor(visceralDmg * POSTURE_BREAK_DAMAGE_MULT) : Math.floor(visceralDmg);
+          damageEnemy(e, dmg, entities);
+        }
+      });
+      if (bossActive && boss && boss.alive && rectsOverlapAtk(atkBox, boss)) {
+        damageBoss(boss, Math.floor(visceralDmg));
+      }
+      // Rally recovery
+      if (player.rallyHp > 0) {
+        const rallyRecovery = Math.floor(player.rallyHp * RALLY_RECOVERY_PCT);
+        player.hp = Math.min(player.hp + rallyRecovery, getStats().maxHp);
+        player.rallyHp = 0;
+        player.rallyTimer = 0;
+        spawnFloatingText(player.x, player.y - 50, `+${rallyRecovery} HP (Rally!)`, C.goldLight);
+      }
+    } else {
     const weapon = getEquippedWeaponRaw();
     // Bow attack: SPACE + holding ArrowDown
     if (weapon === 'panah_api' && keys['ArrowDown']) {
@@ -449,8 +523,9 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
         trail.damage = 0; // trail does no damage, just visual
         trail.facing = player.facing;
       } else { playSound('noStamina'); }
-    } else if (player.stamina >= STAMINA_LIGHT_COST) {
-      player.stamina -= STAMINA_LIGHT_COST;
+    } else if (player.stamina >= (player.twoHanding ? Math.floor(STAMINA_LIGHT_COST * (1 + TWO_HAND_STAMINA_PENALTY)) : STAMINA_LIGHT_COST)) {
+      const lightCost = player.twoHanding ? Math.floor(STAMINA_LIGHT_COST * (1 + TWO_HAND_STAMINA_PENALTY)) : STAMINA_LIGHT_COST;
+      player.stamina -= lightCost;
       player.attacking = true;
       player.attackHit = false;
       player.comboWindow = 0;
@@ -458,6 +533,8 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
       if (player.attackCombo === 0) { dmg = COMBO_1_DAMAGE + player.level * 2 + stats.attack; dur = COMBO_1_DURATION; }
       else if (player.attackCombo === 1) { dmg = COMBO_2_DAMAGE + player.level * 2 + stats.attack; dur = COMBO_2_DURATION; }
       else { dmg = COMBO_3_DAMAGE + player.level * 3 + stats.attack; dur = COMBO_3_DURATION; }
+      // Souls-like v0.7.1: Two-handing damage bonus
+      if (player.twoHanding) dmg = Math.floor(dmg * TWO_HAND_DAMAGE_MULT);
       player.attackTimer = dur;
       playSound('attack');
       const atkBox = {
@@ -490,12 +567,14 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
         spawnFloatingText(player.x + player.w / 2, player.y - 30, 'LELAH!', C.staminaDark);
       }
     }
+    } // end else (non-visceral light attack)
   }
 
   // ==== HEAVY ATTACK (F) ====
   if (justPressed('KeyF') && !player.dodging && !player.attacking && !player.heavyAttacking && !player.healing && player.parryTimer <= 0) {
-    if (player.stamina >= STAMINA_HEAVY_COST && player.energy >= HEAVY_ATTACK_ENERGY) {
-      player.stamina -= STAMINA_HEAVY_COST;
+    const heavyStaminaCost = player.twoHanding ? Math.floor(STAMINA_HEAVY_COST * (1 + TWO_HAND_STAMINA_PENALTY)) : STAMINA_HEAVY_COST;
+    if (player.stamina >= heavyStaminaCost && player.energy >= HEAVY_ATTACK_ENERGY) {
+      player.stamina -= heavyStaminaCost;
       player.energy -= HEAVY_ATTACK_ENERGY;
       player.heavyAttacking = true;
       player.heavyAttackTimer = HEAVY_ATTACK_DURATION;
@@ -527,8 +606,9 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
 
   // ==== DODGE ====
   if ((justPressed('ShiftLeft') || justPressed('ShiftRight')) && !player.healing) {
-    if (!player.dodging && player.stamina >= STAMINA_DODGE_COST) {
-      player.stamina -= STAMINA_DODGE_COST;
+    const dodgeStaminaCost = player.twoHanding ? Math.floor(STAMINA_DODGE_COST * (1 + TWO_HAND_STAMINA_PENALTY)) : STAMINA_DODGE_COST;
+    if (!player.dodging && player.stamina >= dodgeStaminaCost) {
+      player.stamina -= dodgeStaminaCost;
       player.attacking = false; player.heavyAttacking = false;
       player.comboWindow = 0; player.parryTimer = 0; player.attackCombo = 0;
       player.dodging = true;
@@ -537,7 +617,7 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
       playSound('dodge');
     } else if (!player.dodging) { playSound('noStamina');
       // Souls-like v0.7.1: Stamina exhaustion on dodge
-      if (player.stamina < STAMINA_DODGE_COST && !player.exhausted) {
+      if (player.stamina < dodgeStaminaCost && !player.exhausted) {
         player.exhausted = true;
         player.exhaustTimer = STAMINA_EXHAUST_DURATION;
         spawnFloatingText(player.x + player.w / 2, player.y - 30, 'LELAH!', C.staminaDark);
@@ -547,8 +627,9 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
 
   // ==== WEAPON ART (G) v0.7.1 ====
   if (justPressed('KeyG') && !player.dodging && !player.attacking && !player.heavyAttacking && !player.healing && !player.weaponArtActive && player.parryTimer <= 0 && player.weaponArtCooldown <= 0) {
-    if (player.stamina >= WEAPON_ART_STAMINA_COST && player.energy >= WEAPON_ART_ENERGY_COST) {
-      player.stamina -= WEAPON_ART_STAMINA_COST;
+    const waStaminaCost = player.twoHanding ? Math.floor(WEAPON_ART_STAMINA_COST * (1 + TWO_HAND_STAMINA_PENALTY)) : WEAPON_ART_STAMINA_COST;
+    if (player.stamina >= waStaminaCost && player.energy >= WEAPON_ART_ENERGY_COST) {
+      player.stamina -= waStaminaCost;
       player.energy -= WEAPON_ART_ENERGY_COST;
       player.weaponArtActive = true;
       const weapon = getEquippedWeaponRaw();
@@ -615,8 +696,10 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
       });
     }
     if (!interacted && !player.dodging && !player.attacking && !player.heavyAttacking && player.parryTimer <= 0) {
-      // Souls-like v0.7.0: Use Estus Flask (E key) instead of health potion
-      if (player.hp < effectiveMaxHp && player.estus > 0) {
+      // Souls-like v0.7.1: Two-handing prevents Estus use
+      if (player.twoHanding) {
+        spawnFloatingText(player.x + player.w / 2, player.y - 30, 'Lepaskan dua tangan dulu!', C.red + '80');
+      } else if (player.hp < effectiveMaxHp && player.estus > 0) {
         player.estus--;
         player.healing = true;
         player.healingTimer = 0;
@@ -682,6 +765,8 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
       player.checkpoint = { x: player.x, y: player.y };
       tileMap[cpty][cptx] = 0;
       // Souls-like v0.7.0: Bonfire checkpoint — refill estus and fully heal
+      // Souls-like v0.7.1: Cure hollowing at bonfire
+      player.hollowing = 0;
       player.hp = effectiveMaxHp;
       player.stamina = effectiveMaxStamina;
       player.energy = effectiveMaxEnergy;
@@ -738,6 +823,7 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
 
   // State
   if (player.healing) player.state = 'heal';
+  else if (player.visceralActive) player.state = 'heavyAttack'; // Reuse heavy attack visual
   else if (player.weaponArtActive) player.state = 'heavyAttack';
   else if (player.dodging) player.state = 'dodge';
   else if (player.poiseStaggerTimer > 0) player.state = 'hurt';
@@ -803,7 +889,9 @@ function rectsOverlapAtk(a, b) {
 
 // ---- WEAPON ART HIT EXECUTION v0.7.1 ----
 function executeWeaponArtHit(art, entities, boss, bossActive, stats) {
-  const baseDmg = (stats.attack + player.level * 3) * art.damageMult;
+  let baseDmg = (stats.attack + player.level * 3) * art.damageMult;
+  // Souls-like v0.7.1: Two-handing damage bonus
+  if (player.twoHanding) baseDmg = Math.floor(baseDmg * TWO_HAND_DAMAGE_MULT);
   const atkBox = {
     x: player.facing > 0 ? player.x + player.w : player.x - art.range,
     y: player.y - 15, w: art.range, h: player.h + 30,
@@ -892,6 +980,8 @@ export function damagePlayer(amount) {
   if (player.parryWindow > 0) {
     parryFlashRef.timer = 15;
     player.invincible = 20;
+    // Souls-like v0.7.1: Open visceral attack window after parry
+    player.visceralWindow = VISCERAL_WINDOW;
     // Souls-like: Parry refunds stamina
     player.stamina = Math.min(player.stamina + PARRY_STAMINA_REFUND, getStats().maxStamina);
     playSound('parrySuccess');
@@ -951,6 +1041,9 @@ export function playerDie() {
   }
   // Store last lost rupiah for death screen display
   player.lastLostRupiah = lostRupiah;
+
+  // Souls-like v0.7.1: Hollowing — consecutive deaths reduce max HP
+  player.hollowing = Math.min(HOLLOWING_MAX_LEVEL, player.hollowing + 1);
 
   gameStateRef.value = 'gameOver';
   deathCountRef.value++;

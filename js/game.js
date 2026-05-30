@@ -177,6 +177,8 @@ function continueGame() {
   player.rallyHp = data.player.rallyHp || 0;
   player.rallyTimer = data.player.rallyTimer || 0;
   player.poise = data.player.poise !== undefined ? data.player.poise : player.maxPoise;
+  // Souls-like v0.7.1: Restore hollowing
+  player.hollowing = data.player.hollowing || 0;
   // Restore inventory
   if (data.inventory) {
     inventory.items = data.inventory.items || [];

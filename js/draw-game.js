@@ -2,7 +2,7 @@
 // draw-game.js — All game rendering functions
 // ============================================================
 
-import { C, GAME_W, GAME_H, TILE, PARRY_DURATION, PARRY_WINDOW, HEAVY_ATTACK_WINDUP, HEAVY_ATTACK_DURATION, COMBO_1_DURATION, COMBO_2_DURATION, COMBO_3_DURATION, BOSS_RECOVERY_FRAMES, STAGES, STAT_NAMES, STAT_LABELS, STAT_PER_POINT } from './config.js';
+import { C, GAME_W, GAME_H, TILE, PARRY_DURATION, PARRY_WINDOW, HEAVY_ATTACK_WINDUP, HEAVY_ATTACK_DURATION, COMBO_1_DURATION, COMBO_2_DURATION, COMBO_3_DURATION, BOSS_RECOVERY_FRAMES, STAGES, STAT_NAMES, STAT_LABELS, STAT_PER_POINT, HOLLOWING_MAX_LEVEL, VISCERAL_DURATION } from './config.js';
 import { drawText, drawRect, drawBar, drawOutline, getCtx } from './renderer.js';
 import { camera } from './camera.js';
 import { player } from './player.js';
@@ -260,6 +260,15 @@ export function drawPlayer(parryFlashTimer) {
   drawRect(18, 16, 3, 14, weaponColor);
   drawRect(17, 14, 5, 3, C.gold);
 
+  // Souls-like v0.7.1: Two-handing visual
+  if (player.twoHanding) {
+    // Second hand on weapon
+    drawRect(14, 20, 6, 8, '#D4A574');
+    // Weapon glow
+    ctx.fillStyle = C.parryGold + '30';
+    ctx.fillRect(16, 14, 8, 20);
+  }
+
   // Accessory glow
   const acc = getEquippedAccessory();
   if (acc) {
@@ -280,6 +289,13 @@ export function drawPlayer(parryFlashTimer) {
   // Poison overlay
   if (player.poisonTimer > 0) {
     ctx.fillStyle = C.green + '20';
+    ctx.fillRect(0, 0, player.w, player.h);
+  }
+
+  // Souls-like v0.7.1: Hollowing desaturation overlay
+  if (player.hollowing > 0) {
+    const hollowAlpha = Math.min(0.4, player.hollowing * 0.04);
+    ctx.fillStyle = `rgba(40, 30, 30, ${hollowAlpha})`;
     ctx.fillRect(0, 0, player.w, player.h);
   }
 
@@ -339,6 +355,15 @@ export function drawPlayer(parryFlashTimer) {
     }
   }
 
+  // Souls-like v0.7.1: Visceral attack visual
+  if (player.visceralActive) {
+    ctx.strokeStyle = C.parryGold + 'DD'; ctx.lineWidth = 4;
+    const visceralProgress = player.visceralTimer / VISCERAL_DURATION;
+    ctx.beginPath(); ctx.arc(player.w / 2 + 15, player.h / 2, 25 * (1 - visceralProgress) + 10, -1.2, 1.2); ctx.stroke();
+    ctx.fillStyle = C.parryGold + '40';
+    ctx.beginPath(); ctx.arc(player.w / 2 + 10, player.h / 2, 20, 0, Math.PI * 2); ctx.fill();
+  }
+
   // Parry
   if (player.parryTimer > 0) {
     if (player.parryWindow > 0) {
@@ -390,6 +415,14 @@ export function drawEnemies(entities) {
       ctx.fillRect(-4, -4, e.w + 8, e.h + 8);
     }
     if (e.staggered) { ctx.fillStyle = C.parryGold + '40'; ctx.fillRect(-2, -2, e.w + 4, e.h + 4); }
+
+    // Souls-like v0.7.1: Aggro indicator
+    if (e.isAggroed) {
+      ctx.fillStyle = C.red + '15';
+      ctx.fillRect(-2, -2, e.w + 4, e.h + 4);
+    } else {
+      drawText('?', e.w / 2, -10, 8, C.textDim, 'center');
+    }
 
     // Draw enemy based on type
     switch (e.enemyType) {
@@ -500,6 +533,15 @@ export function drawBoss(boss, bossActive) {
     const stagAlpha = Math.sin(gameTime * 0.3) * 0.3 + 0.3;
     ctx.fillStyle = `rgba(255, 215, 0, ${stagAlpha})`;
     ctx.fillRect(-4, -4, boss.w + 8, boss.h + 8);
+  }
+
+  // Souls-like v0.7.1: Phase 2 transition visual
+  if (boss.phase2Transitioned && boss.recoveryTimer > 30) {
+    const transAlpha = Math.sin(gameTime * 0.3) * 0.3 + 0.4;
+    ctx.fillStyle = `rgba(255, 0, 0, ${transAlpha})`;
+    ctx.fillRect(-10, -10, boss.w + 20, boss.h + 20);
+    ctx.fillStyle = `rgba(255, 215, 0, ${transAlpha * 0.5})`;
+    ctx.fillRect(-5, -5, boss.w + 10, boss.h + 10);
   }
 
   const sid = boss.stageId || 0;
@@ -777,6 +819,15 @@ export function drawHUD(boss, bossActive, deathCount) {
   if (player.exhausted) {
     drawText('LELAH!', 160, 50, 9, C.red, 'left');
   }
+  // Souls-like v0.7.1: Hollowing indicator
+  if (player.hollowing > 0) {
+    const hollowPct = player.hollowing / HOLLOWING_MAX_LEVEL;
+    drawText(`Hollow: ${player.hollowing}/${HOLLOWING_MAX_LEVEL}`, 160, 14, 8, C.red + 'AA', 'left');
+  }
+  // Souls-like v0.7.1: Two-handing indicator
+  if (player.twoHanding) {
+    drawText('2TANGAN', 158, 50, 8, C.parryGold, 'left');
+  }
   drawText('EN', 158, 30, 11, C.textDim, 'left');
   drawBar(174, 22, 70, 14, player.energy / stats.maxEnergy, '#003344', C.cyan, 3);
   if (player.attacking || player.comboWindow > 0) {
@@ -860,7 +911,7 @@ export function drawHUD(boss, bossActive, deathCount) {
 
   const stage = STAGES[currentStageId] || STAGES[0];
   drawText(stage.name, GAME_W / 2, 22, 11, C.gold + '60', 'center');
-  drawText('WASD:Gerak  SPACE:Serang  F:Heavy  R:Parry  SHIFT:Dodge  Q:Skill  E:Estus/Interaksi  TAB:Inventori', GAME_W / 2, GAME_H - 6, 7, C.textDim, 'center');
+  drawText('WASD:Gerak SPACE:Serang F:Heavy R:Parry SHIFT:Dodge Q:Skill E:Estus G:Seni H:2Tangan TAB:Inv', GAME_W / 2, GAME_H - 6, 7, C.textDim, 'center');
 
   // Save indicator
   if (saveIndicatorTimer > 0) {
@@ -1520,6 +1571,19 @@ export function drawGameOver(deathCount) {
     // Death penalty display
     if (player.lastLostRupiah > 0) {
       drawText(`Rupiah hilang: -${player.lastLostRupiah}`, GAME_W / 2, GAME_H / 2 + 32, 14, C.red + 'CC', 'center');
+    }
+    // Souls-like v0.7.1: Hollowing warning
+    if (player.hollowing > 0) {
+      drawText(`Hollowing: ${player.hollowing}/${HOLLOWING_MAX_LEVEL}`, GAME_W / 2, GAME_H / 2 + 50, 12, C.textDim, 'center');
+      if (player.hollowing >= 5) {
+        drawText('Semakin Hollow...', GAME_W / 2, GAME_H / 2 + 68, 11, C.red + '80', 'center');
+      }
+    }
+    // Souls-like v0.7.1: Bloodstain direction hint
+    if (player.bloodstain) {
+      const bsDx = player.bloodstain.x - player.checkpoint.x;
+      const direction = bsDx > 50 ? '>>>' : bsDx < -50 ? '<<<' : 'dekat';
+      drawText(`Darah: ${direction} (+${player.bloodstain.rupiah}R)`, GAME_W / 2, GAME_H / 2 + 85, 11, C.red + '80', 'center');
     }
     ctx.globalAlpha = 1;
   }
