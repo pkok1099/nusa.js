@@ -1338,7 +1338,8 @@ export function drawStageSelect(unlockedStages) {
   }
 
   // Stage cards
-  STAGES.forEach((stage, i) => {
+  for (let i = 0; i < STAGES.length; i++) {
+    const stage = STAGES[i];
     const cx = 60 + (i % 3) * 290;
     const cy = 100 + Math.floor(i / 3) * 180;
     const isUnlocked = unlockedStages[i];
@@ -1368,7 +1369,7 @@ export function drawStageSelect(unlockedStages) {
       drawRect(cx + 125, cy + 105, 20, 20, C.stoneDark + '60');
       drawRect(cx + 128, cy + 115, 14, 10, C.stone + '40');
     }
-  });
+  }
 
   // Back button
   drawRect(GAME_W / 2 - 60, GAME_H - 45, 120, 30, C.gold + '15', 6);

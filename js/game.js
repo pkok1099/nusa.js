@@ -260,9 +260,11 @@ function gameLoop() {
       break;
     }
 
+
     case 'stageSelect': {
       const result = drawStageSelect(unlockedStages);
       if (result) {
+
         if (result.action === 'select') {
           startStage(result.stageId);
         } else if (result.action === 'shop') {
