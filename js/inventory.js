@@ -40,7 +40,11 @@ export function equipItem(index) {
   if (!item) return false;
 
   if (item.category === 'weapon') {
-    // Unequip current weapon back to inventory
+    // BUG FIX v0.6.2: Remove the item FIRST, then push old equipment back.
+    // Previously, pushing old equipment first shifted the index, causing
+    // the wrong item to be removed.
+    const itemId = item.id;
+    removeItem(index);
     if (inventory.equipment.weapon) {
       const prevWeapon = inventory.equipment.weapon;
       inventory.items.push({
@@ -48,10 +52,11 @@ export function equipItem(index) {
         ...WEAPONS[prevWeapon],
       });
     }
-    inventory.equipment.weapon = item.id;
-    removeItem(index);
+    inventory.equipment.weapon = itemId;
     playSound('pickup');
   } else if (item.category === 'armor') {
+    const itemId = item.id;
+    removeItem(index);
     if (inventory.equipment.armor) {
       const prevArmor = inventory.equipment.armor;
       inventory.items.push({
@@ -59,10 +64,11 @@ export function equipItem(index) {
         ...ARMORS[prevArmor],
       });
     }
-    inventory.equipment.armor = item.id;
-    removeItem(index);
+    inventory.equipment.armor = itemId;
     playSound('pickup');
   } else if (item.category === 'accessory') {
+    const itemId = item.id;
+    removeItem(index);
     if (inventory.equipment.accessory) {
       const prevAcc = inventory.equipment.accessory;
       inventory.items.push({
@@ -70,8 +76,7 @@ export function equipItem(index) {
         ...ACCESSORIES[prevAcc],
       });
     }
-    inventory.equipment.accessory = item.id;
-    removeItem(index);
+    inventory.equipment.accessory = itemId;
     playSound('pickup');
   } else {
     return false;

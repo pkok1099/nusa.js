@@ -48,6 +48,29 @@ export function updateBoss(boss, bossActive, hitStopTimer, player) {
   if (boss.recoveryTimer > 0) {
     boss.recoveryTimer--;
     boss.vx = 0;
+
+    // BUG FIX v0.6.2: Frame-based clawCombo hits instead of setTimeout
+    if (boss.comboHits > 0) {
+      boss.comboHitTimer++;
+      if (boss.comboHitTimer % 10 === 0 && boss.alive) {
+        const atkBox = {
+          x: boss.facing > 0 ? boss.x + boss.w : boss.x - 60,
+          y: boss.y, w: 60, h: boss.h,
+        };
+        const checkOverlapCb = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+        if (checkOverlapCb(player, atkBox) && player.invincible <= 0) {
+          const dmgMult = boss.phase === 3 ? 1.5 : (boss.phase === 2 ? 1.2 : 1.0);
+          damagePlayer(Math.floor(15 * dmgMult));
+        }
+        spawnParticle(boss.x + boss.w / 2 + boss.facing * 30, boss.y + boss.h / 2, C.goldDark, 5, 3);
+        boss.comboHits--;
+        if (boss.comboHits <= 0) {
+          boss.comboHits = 0;
+          boss.comboHitTimer = 0;
+        }
+      }
+    }
+
     applyBossGravity(boss);
     return;
   }
@@ -323,12 +346,24 @@ export function executeBossAttack(boss, player) {
       break;
 
     case 'charge':
-      boss.vx = boss.facing * 6;
-      boss.x += boss.vx * 5;
-      if (checkOverlap(player, boss) && player.invincible <= 0)
-        damagePlayer(Math.floor(20 * dmgMult));
-      spawnParticle(boss.x + boss.w / 2, boss.y + boss.h, C.stoneDark, 10, 3);
-      playSound('heavyAttack');
+      // BUG FIX v0.6.2: Cap charge distance and add collision check
+      // to prevent boss from teleporting through walls
+      {
+        const chargeDist = Math.min(boss.facing * 6 * 5, 150); // cap at 150px
+        boss.vx = boss.facing * 6;
+        boss.x += chargeDist;
+        // Collision check after charge
+        const chargeCols = tileCollision(boss.x, boss.y, boss.w, boss.h, boss.prevY);
+        chargeCols.forEach(c => {
+          if (c.oneway) return;
+          if (boss.vx > 0) boss.x = c.x - boss.w;
+          else boss.x = c.x + c.w;
+        });
+        if (checkOverlap(player, boss) && player.invincible <= 0)
+          damagePlayer(Math.floor(20 * dmgMult));
+        spawnParticle(boss.x + boss.w / 2, boss.y + boss.h, C.stoneDark, 10, 3);
+        playSound('heavyAttack');
+      }
       break;
 
     case 'aoeStomp':
@@ -342,8 +377,15 @@ export function executeBossAttack(boss, player) {
 
     // Raja Hutan attacks
     case 'pounce': {
-      const pounceSpeed = boss.facing * 7;
-      boss.x += pounceSpeed * 3;
+      // BUG FIX v0.6.2: Cap pounce distance and add collision check
+      const pounceDist = Math.min(boss.facing * 7 * 3, 120); // cap at 120px
+      boss.x += pounceDist;
+      const pounceCols = tileCollision(boss.x, boss.y, boss.w, boss.h, boss.prevY);
+      pounceCols.forEach(c => {
+        if (c.oneway) return;
+        if (boss.facing > 0) boss.x = c.x - boss.w;
+        else boss.x = c.x + c.w;
+      });
       if (checkOverlap(player, boss) && player.invincible <= 0)
         damagePlayer(Math.floor(20 * dmgMult));
       spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 2, C.grassLight, 10, 4);
@@ -352,18 +394,11 @@ export function executeBossAttack(boss, player) {
     }
 
     case 'clawCombo':
-      for (let i = 0; i < 3; i++) {
-        setTimeout(() => {
-          if (!boss.alive) return;
-          const atkBox = {
-            x: boss.facing > 0 ? boss.x + boss.w : boss.x - 60,
-            y: boss.y, w: 60, h: boss.h,
-          };
-          if (checkOverlap(player, atkBox) && player.invincible <= 0)
-            damagePlayer(Math.floor(15 * dmgMult));
-          spawnParticle(boss.x + boss.w / 2 + boss.facing * 30, boss.y + boss.h / 2, C.goldDark, 5, 3);
-        }, i * 150);
-      }
+      // BUG FIX v0.6.2: Replaced setTimeout with frame-based combo tracking.
+      // setTimeout broke game loop synchronization and could deal damage
+      // after boss died or game state changed.
+      boss.comboHits = 3;
+      boss.comboHitTimer = 0;
       playSound('hit');
       break;
 
@@ -412,24 +447,31 @@ export function executeBossAttack(boss, player) {
       break;
 
     case 'meteorRain':
+      // BUG FIX v0.6.2: Replaced setTimeout with immediate spawn of all meteors
+      // with randomized positions. The delayed version broke game loop sync.
       for (let i = 0; i < 5; i++) {
-        setTimeout(() => {
-          if (!boss.alive) return;
-          const mx = boss.x + (Math.random() - 0.5) * 300;
-          particlesList.push({
-            x: mx, y: boss.y - 200,
-            vx: 0, vy: 5,
-            life: 50, maxLife: 50, color: C.lava, size: 8,
-            isProjectile: true, damage: Math.floor(15 * dmgMult),
-          });
-        }, i * 200);
+        const mx = boss.x + (Math.random() - 0.5) * 300;
+        particlesList.push({
+          x: mx, y: boss.y - 200 - i * 40,
+          vx: 0, vy: 5,
+          life: 50, maxLife: 50, color: C.lava, size: 8,
+          isProjectile: true, damage: Math.floor(15 * dmgMult),
+        });
       }
       playSound('boss');
       break;
 
     case 'fireCharge': {
+      // BUG FIX v0.6.2: Cap charge distance and add collision check
+      const fcDist = Math.min(boss.facing * 8 * 4, 180); // cap at 180px
       boss.vx = boss.facing * 8;
-      boss.x += boss.vx * 4;
+      boss.x += fcDist;
+      const fcCols = tileCollision(boss.x, boss.y, boss.w, boss.h, boss.prevY);
+      fcCols.forEach(c => {
+        if (c.oneway) return;
+        if (boss.vx > 0) boss.x = c.x - boss.w;
+        else boss.x = c.x + c.w;
+      });
       if (checkOverlap(player, boss) && player.invincible <= 0)
         damagePlayer(Math.floor(25 * dmgMult));
       spawnParticle(boss.x + boss.w / 2, boss.y + boss.h, C.lava, 15, 5);
@@ -503,9 +545,17 @@ export function executeBossAttack(boss, player) {
       playSound('skill');
       break;
 
-    case 'shieldBash':
+    case 'shieldBash': {
+      // BUG FIX v0.6.2: Cap shield bash distance and add collision check
+      const sbDist = Math.min(boss.facing * 7 * 3, 140); // cap at 140px
       boss.vx = boss.facing * 7;
-      boss.x += boss.vx * 3;
+      boss.x += sbDist;
+      const sbCols = tileCollision(boss.x, boss.y, boss.w, boss.h, boss.prevY);
+      sbCols.forEach(c => {
+        if (c.oneway) return;
+        if (boss.vx > 0) boss.x = c.x - boss.w;
+        else boss.x = c.x + c.w;
+      });
       if (checkOverlap(player, boss) && player.invincible <= 0) {
         damagePlayer(Math.floor(18 * dmgMult));
         if (player.stunTimer !== undefined) player.stunTimer = 30;
@@ -514,6 +564,7 @@ export function executeBossAttack(boss, player) {
       spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 2, C.gold, 10, 4);
       playSound('heavyAttack');
       break;
+    }
 
     case 'earthquake':
       if (dist < 180 && player.invincible <= 0)

@@ -1343,7 +1343,7 @@ export function drawMenu() {
     drawText('[ESC] Kembali', GAME_W / 2, GAME_H - 110, 12, C.textDim, 'center');
   }
 
-  drawText('v0.6.1 — Combat Patch', GAME_W / 2, GAME_H - 30, 9, C.textDim, 'center');
+  drawText('v0.6.2 — Bug Fix Patch', GAME_W / 2, GAME_H - 30, 9, C.textDim, 'center');
 
   if (justPressed('ArrowUp') || justPressed('KeyW')) menuSelection = (menuSelection - 1 + menuItems.length) % menuItems.length;
   if (justPressed('ArrowDown') || justPressed('KeyS')) menuSelection = (menuSelection + 1) % menuItems.length;

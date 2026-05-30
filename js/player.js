@@ -112,7 +112,23 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
     if (player.dropThrough <= 0) setDropThrough(false);
   }
 
-  if (hitStopRef.value > 0) return;
+  if (hitStopRef.value > 0) {
+    // BUG FIX v0.6.2: During hitstop, still process buffered jump
+    // if coyote timer is valid. Previously, the jump at the bottom
+    // was unreachable during hitstop, causing intermittent jump failure.
+    if (player.jumpBufferTimer > 0 && player.coyoteTimer > 0 && !player.healing && !player.dodging) {
+      player.vy = JUMP_FORCE;
+      player.grounded = false;
+      player.coyoteTimer = 0;
+      player.jumpBufferTimer = 0;
+      player.attacking = false;
+      player.heavyAttacking = false;
+      player.comboWindow = 0;
+      player.parryTimer = 0;
+      playSound('jump');
+    }
+    return;
+  }
 
   // Update buffs
   updateBuffs();
@@ -129,6 +145,9 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
   if (player.stunTimer > 0) {
     player.stunTimer--;
     player.vx = 0;
+    // BUG FIX v0.6.2: Set prevY before gravity/collision during stun,
+    // otherwise one-way platforms don't work correctly
+    player.prevY = player.y;
     applyGravityAndCollision(tileMap);
     return;
   }
@@ -173,6 +192,8 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
     }
     if (player.healingTimer >= HEAL_ANIMATION_DURATION) player.healing = false;
     player.vx = 0;
+    // BUG FIX v0.6.2: Set prevY before gravity/collision during healing
+    player.prevY = player.y;
     applyGravityAndCollision(tileMap);
     return;
   }
@@ -193,6 +214,8 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
     player.parryWindow = player.parryTimer > (PARRY_DURATION - PARRY_WINDOW)
       ? player.parryTimer - (PARRY_DURATION - PARRY_WINDOW) : 0;
     player.vx = 0;
+    // BUG FIX v0.6.2: Set prevY before gravity/collision during parry
+    player.prevY = player.y;
     applyGravityAndCollision(tileMap);
     return;
   } else {
@@ -253,7 +276,10 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
   }
 
   // ==== JUMP (outside else blocks) ====
-  if (player.jumpBufferTimer > 0 && player.coyoteTimer > 0 && !player.healing) {
+  // BUG FIX v0.6.2: Added dodge/parry state checks to prevent jump during
+  // actions that should lock the player in place (dodge, parry window).
+  // Also added drop-through check to prevent jumping while dropping.
+  if (player.jumpBufferTimer > 0 && player.coyoteTimer > 0 && !player.healing && !player.dodging && player.parryTimer <= 0 && player.dropThrough <= 0) {
     player.vy = JUMP_FORCE;
     player.grounded = false;
     player.coyoteTimer = 0;

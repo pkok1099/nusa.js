@@ -128,6 +128,9 @@ export function createBoss(x, y, stageId) {
     specialTimer: 0,
     summonCount: 0,
     projectileAngle: 0,
+    // BUG FIX v0.6.2: Frame-based combo tracking (replaces setTimeout)
+    comboHits: 0,
+    comboHitTimer: 0,
   };
 }
 

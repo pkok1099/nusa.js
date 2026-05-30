@@ -183,7 +183,9 @@ function updateHarimau(e, player) {
     if (e.attackAnimTimer === 8) executeMeleeHit(e, player, e.damage);
     if (e.attackAnimTimer <= 0) {
       e.isAttacking = false;
-      e.vx = e.facing * Math.abs(e.vx > 0 ? 1 : -1) * 2.5;
+      // BUG FIX v0.6.2: Simplified velocity reset after pounce.
+      // Old code had confusing Math.abs wrapping that always resulted in 1.
+      e.vx = e.facing * 2.5;
     }
   } else {
     // Fast patrol / chase

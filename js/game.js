@@ -7,11 +7,11 @@ import { initAudio, playSound } from './audio.js';
 import { keys, savePrevKeys, setupInput, justPressed } from './input.js';
 import { setTileMap } from './physics.js';
 import { camera, updateCamera } from './camera.js';
-import { particles, floatingTexts, updateParticles, clearParticles, spawnFloatingText } from './particles.js';
+import { particles, floatingTexts, updateParticles, clearParticles, spawnFloatingText, setDamageCallbacks } from './particles.js';
 import { initRenderer } from './renderer.js';
 import { generateLevel } from './level.js';
 import { spawnEntities, createBoss, createEnemy } from './entities.js';
-import { player, updatePlayer, damagePlayer, gainExp, resetPlayer, respawnPlayer, setStateRefs, bossDropQueue } from './player.js';
+import { player, updatePlayer, damagePlayer, damageEnemy, damageBoss, gainExp, resetPlayer, respawnPlayer, setStateRefs, bossDropQueue } from './player.js';
 import { updateEnemies, setEnemyShakeRef } from './enemy.js';
 import { updateBoss } from './boss.js';
 import { bossSummonQueue } from './boss.js';
@@ -41,6 +41,16 @@ setStateRefs(gameState, hitStop, shake, parryFlash, deathCount);
 setEnemyShakeRef(shake);
 import { setOnCheckpoint } from './player.js';
 setOnCheckpoint(() => { autoSave(currentStageId); });
+
+// BUG FIX v0.6.2: Wire up particle damage callbacks so player arrows
+// can hit enemies and bosses
+setDamageCallbacks(
+  damageEnemy,
+  damageBoss,
+  () => entities,
+  () => boss,
+  () => bossActive
+);
 
 // ---- Game-level variables ----
 let gameTime = 0;
@@ -112,7 +122,7 @@ function startStage(stageId) {
   // Intro dialog
   const speaker = stageId === 0 ? 'Candra Kirana' :
     stageId === 1 ? 'Penjaga Hutan' :
-    stageId === 2 ? ' Pendeta Api' :
+    stageId === 2 ? 'Pendeta Api' :
     stageId === 3 ? 'Nyi Roro Kidul' : 'Resi Wisrawa';
   doStartDialog(speaker, stage.introDialog);
 }
