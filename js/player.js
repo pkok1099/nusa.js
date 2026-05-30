@@ -15,11 +15,14 @@ import {
   STAMINA_HEAVY_COST, STAMINA_PARRY_COST,
   HEAL_ANIMATION_DURATION, HEAL_TICKS, HEAL_AMOUNT,
   HIT_STOP_FRAMES, SKILL_DAMAGE, INV_FRAMES, GROUND_Y, C,
+  SKILL_POINTS_PER_LEVEL,
 } from './config.js';
 import { playSound } from './audio.js';
 import { justPressed } from './input.js';
-import { tileCollision } from './physics.js';
+import { tileCollision, getTileType } from './physics.js';
 import { spawnParticle, spawnFloatingText } from './particles.js';
+import { inventory, getComputedStats, useHealthPotion, updateBuffs, countHealthPotions, addItem } from './inventory.js';
+import { WEAPONS, ARMORS, ACCESSORIES, POTIONS } from './config.js';
 
 export const player = {
   x: 80, y: GROUND_Y - 36, w: 24, h: 36,
@@ -43,7 +46,14 @@ export const player = {
   animFrame: 0, animTimer: 0,
   state: 'idle', hurtTimer: 0,
   checkpoint: { x: 80, y: GROUND_Y - 36 },
-  potions: 3, keys: 0,
+  potions: 0, keys: 0,
+  // New status effects
+  poisonTimer: 0,
+  stunTimer: 0,
+  slowTimer: 0,
+  lavaDamageTimer: 0,
+  // Current stage
+  currentStageId: 0,
 };
 
 // Shared mutable state references (set from game.js)
@@ -58,19 +68,68 @@ export function setStateRefs(gs, hs, sh, pf, dc) {
   parryFlashRef = pf; deathCountRef = dc;
 }
 
+// Get computed effective stats from inventory
+function getStats() {
+  return getComputedStats(player.level);
+}
+
 export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tileMap, startDialog, initPuzzle) {
   if (hitStopRef.value > 0) return;
+
+  // Update buffs
+  updateBuffs();
+
+  // Update status effects
+  if (player.poisonTimer > 0) {
+    player.poisonTimer--;
+    if (player.poisonTimer % 30 === 0 && player.poisonTimer > 0) {
+      player.hp -= 3;
+      spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.green + '80', 3, 1, 15);
+      if (player.hp <= 0) { player.hp = 0; playerDie(); }
+    }
+  }
+  if (player.stunTimer > 0) {
+    player.stunTimer--;
+    player.vx = 0;
+    applyGravityAndCollision(tileMap);
+    return;
+  }
+  if (player.slowTimer > 0) player.slowTimer--;
+
+  // Lava damage
+  if (player.lavaDamageTimer > 0) player.lavaDamageTimer--;
+  const ptx = Math.floor((player.x + player.w / 2) / 32);
+  const pty = Math.floor((player.y + player.h - 2) / 32);
+  const tileT = getTileType(ptx, pty);
+  if (tileT === 3 && player.lavaDamageTimer <= 0) {
+    player.lavaDamageTimer = 30; // damage every 0.5s
+    damagePlayer(8);
+    spawnParticle(player.x + player.w / 2, player.y + player.h, C.lava, 5, 3, 20);
+  }
 
   if (player.hurtTimer > 0) player.hurtTimer--;
   if (player.invincible > 0) player.invincible--;
   if (player.skillCooldown > 0) player.skillCooldown--;
   player.prevY = player.y;
 
+  // Get computed stats for this frame
+  const stats = getStats();
+
+  // Apply max stats from equipment/buffs
+  const effectiveMaxHp = stats.maxHp;
+  const effectiveMaxStamina = stats.maxStamina;
+  const effectiveMaxEnergy = stats.maxEnergy;
+
+  // Clamp current values to max
+  player.hp = Math.min(player.hp, effectiveMaxHp);
+  player.stamina = Math.min(player.stamina, effectiveMaxStamina);
+  player.energy = Math.min(player.energy, effectiveMaxEnergy);
+
   // ---- HEALING ----
   if (player.healing) {
     player.healingTimer++;
     if (player.healingTimer % Math.floor(HEAL_ANIMATION_DURATION / HEAL_TICKS) === 0 && player.healTicksRemaining > 0) {
-      player.hp = Math.min(player.maxHp, player.hp + player.healPerTick);
+      player.hp = Math.min(effectiveMaxHp, player.hp + player.healPerTick);
       player.healTicksRemaining--;
       spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.green, 2, 1, 15);
     }
@@ -82,8 +141,8 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
 
   // ---- STAMINA REGEN ----
   const isExerting = player.dodging || player.attacking || player.heavyAttacking || player.parryTimer > 0;
-  if (!isExerting && player.stamina < player.maxStamina) {
-    player.stamina = Math.min(player.maxStamina, player.stamina + STAMINA_REGEN);
+  if (!isExerting && player.stamina < effectiveMaxStamina) {
+    player.stamina = Math.min(effectiveMaxStamina, player.stamina + STAMINA_REGEN);
   }
 
   // ---- COYOTE TIME ----
@@ -105,6 +164,9 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
   } else {
     player.parryWindow = 0;
   }
+
+  // Effective speed (from equipment + buffs + slow)
+  const effectiveSpeed = stats.speed * (player.slowTimer > 0 ? 0.5 : 1.0);
 
   // ---- DODGE ----
   if (player.dodging) {
@@ -130,12 +192,13 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
         y: player.y - 10, w: ATTACK_RANGE + 10, h: player.h + 20,
       };
       playSound('heavyAttack');
+      const totalDmg = HEAVY_ATTACK_DAMAGE + player.level * 3 + stats.attack;
       entities.forEach(e => {
         if (e.type === 'enemy' && e.alive && rectsOverlapAtk(atkBox, e))
-          damageEnemy(e, HEAVY_ATTACK_DAMAGE + player.level * 3, entities);
+          damageEnemy(e, totalDmg, entities);
       });
       if (bossActive && boss && boss.alive && rectsOverlapAtk(atkBox, boss))
-        damageBoss(boss, HEAVY_ATTACK_DAMAGE + player.level * 4);
+        damageBoss(boss, HEAVY_ATTACK_DAMAGE + player.level * 4 + stats.attack);
       spawnParticle(player.x + player.w / 2 + player.facing * 30, player.y + player.h / 2, C.gold, 12, 5, 25);
       shakeRef.timer = 5; shakeRef.intensity = 4;
     }
@@ -145,14 +208,14 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
   else if (player.comboWindow > 0) {
     player.comboWindow--;
     player.vx = 0;
-    if (keys['ArrowLeft'] || keys['KeyA']) { player.vx = -PLAYER_SPEED; player.facing = -1; }
-    if (keys['ArrowRight'] || keys['KeyD']) { player.vx = PLAYER_SPEED; player.facing = 1; }
+    if (keys['ArrowLeft'] || keys['KeyA']) { player.vx = -effectiveSpeed; player.facing = -1; }
+    if (keys['ArrowRight'] || keys['KeyD']) { player.vx = effectiveSpeed; player.facing = 1; }
   }
   // ---- NORMAL ----
   else {
     player.vx = 0;
-    if (keys['ArrowLeft'] || keys['KeyA']) { player.vx = -PLAYER_SPEED; player.facing = -1; }
-    if (keys['ArrowRight'] || keys['KeyD']) { player.vx = PLAYER_SPEED; player.facing = 1; }
+    if (keys['ArrowLeft'] || keys['KeyA']) { player.vx = -effectiveSpeed; player.facing = -1; }
+    if (keys['ArrowRight'] || keys['KeyD']) { player.vx = effectiveSpeed; player.facing = 1; }
   }
 
   // ==== JUMP (outside else blocks) ====
@@ -176,9 +239,9 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
       player.attackHit = false;
       player.comboWindow = 0;
       let dmg, dur;
-      if (player.attackCombo === 0) { dmg = COMBO_1_DAMAGE + player.level * 2; dur = COMBO_1_DURATION; }
-      else if (player.attackCombo === 1) { dmg = COMBO_2_DAMAGE + player.level * 2; dur = COMBO_2_DURATION; }
-      else { dmg = COMBO_3_DAMAGE + player.level * 3; dur = COMBO_3_DURATION; }
+      if (player.attackCombo === 0) { dmg = COMBO_1_DAMAGE + player.level * 2 + stats.attack; dur = COMBO_1_DURATION; }
+      else if (player.attackCombo === 1) { dmg = COMBO_2_DAMAGE + player.level * 2 + stats.attack; dur = COMBO_2_DURATION; }
+      else { dmg = COMBO_3_DAMAGE + player.level * 3 + stats.attack; dur = COMBO_3_DURATION; }
       player.attackTimer = dur;
       playSound('attack');
       const atkBox = {
@@ -187,6 +250,11 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
       };
       entities.forEach(e => {
         if (e.type === 'enemy' && e.alive && rectsOverlapAtk(atkBox, e)) {
+          // Check if prajurit_jahat is blocking
+          if (e.enemyType === 'prajurit_jahat' && e.blockTimer > 0) {
+            dmg = Math.floor(dmg * 0.2);
+            spawnFloatingText(e.x + e.w / 2, e.y - 10, 'Diblokir!', C.cyan);
+          }
           let finalDmg = e.staggered ? Math.floor(dmg * STAGGER_DAMAGE_MULT) : dmg;
           damageEnemy(e, finalDmg, entities);
           player.attackHit = true;
@@ -250,26 +318,35 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
     spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.gold, 20, 5, 40);
     entities.forEach(e => {
       if (e.type === 'enemy' && e.alive && rectsOverlapAtk(skillBox, e)) {
-        let finalDmg = SKILL_DAMAGE + player.level * 5;
+        let finalDmg = SKILL_DAMAGE + player.level * 5 + stats.attack;
         if (e.staggered) finalDmg = Math.floor(finalDmg * STAGGER_DAMAGE_MULT);
         damageEnemy(e, finalDmg, entities);
       }
     });
     if (bossActive && boss && boss.alive && rectsOverlapAtk(skillBox, boss)) {
-      let finalDmg = SKILL_DAMAGE + player.level * 3;
+      let finalDmg = SKILL_DAMAGE + player.level * 3 + stats.attack;
       if (boss.staggered) finalDmg = Math.floor(finalDmg * STAGGER_DAMAGE_MULT);
       damageBoss(boss, finalDmg);
     }
   }
 
-  // ==== E KEY: NPC/Puzzle/Healing ====
+  // ==== E KEY: NPC/Puzzle/Heal ====
   if (justPressed('KeyE')) {
     let interacted = false;
     entities.forEach(e => {
       if (interacted) return;
       if (e.type === 'npc') {
         const dist = Math.abs((player.x + player.w / 2) - (e.x + e.w / 2));
-        if (dist < 60) { startDialog(e.name, e.dialog); interacted = true; }
+        if (dist < 60) {
+          if (e.npcType === 'pedagang') {
+            // Open shop instead of dialog
+            gameStateRef.value = 'shop';
+            interacted = true;
+          } else {
+            startDialog(e.name, e.dialog);
+            interacted = true;
+          }
+        }
       }
     });
     if (!interacted) {
@@ -281,16 +358,21 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
         }
       });
     }
-    if (!interacted && player.potions > 0 && player.hp < player.maxHp && !player.dodging && !player.attacking && !player.heavyAttacking && player.parryTimer <= 0) {
-      player.potions--;
-      player.healing = true;
-      player.healingTimer = 0;
-      player.healTicksRemaining = HEAL_TICKS;
-      player.healPerTick = HEAL_AMOUNT / HEAL_TICKS;
-      player.attacking = false; player.heavyAttacking = false;
-      player.comboWindow = 0; player.parryTimer = 0; player.attackCombo = 0;
-      playSound('heal');
-      interacted = true;
+    if (!interacted && !player.dodging && !player.attacking && !player.heavyAttacking && player.parryTimer <= 0) {
+      // Try to use health potion from inventory
+      if (player.hp < effectiveMaxHp) {
+        const result = useHealthPotion();
+        if (result && result.type === 'health') {
+          player.healing = true;
+          player.healingTimer = 0;
+          player.healTicksRemaining = HEAL_TICKS;
+          player.healPerTick = result.value / HEAL_TICKS;
+          player.attacking = false; player.heavyAttacking = false;
+          player.comboWindow = 0; player.parryTimer = 0; player.attackCombo = 0;
+          playSound('heal');
+          interacted = true;
+        }
+      }
     }
   }
 
@@ -303,21 +385,47 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
       e.collected = true;
       playSound('pickup');
       switch (e.itemType) {
-        case 'potion': player.potions++; spawnFloatingText(e.x, e.y - 10, '+Ramuan', C.green); break;
-        case 'kristal': player.energy = Math.min(player.maxEnergy, player.energy + 50); spawnFloatingText(e.x, e.y - 10, '+Energi', C.cyan); break;
+        case 'potion': {
+          // Add potion to inventory
+          const potionId = e.subType || 'health';
+          if (POTIONS[potionId]) {
+            addItem({ id: potionId, type: 'potion', category: 'potion', ...POTIONS[potionId] });
+            spawnFloatingText(e.x, e.y - 10, `+${POTIONS[potionId].name}`, C.green);
+          } else {
+            addItem({ id: 'health', type: 'potion', category: 'potion', ...POTIONS.health });
+            spawnFloatingText(e.x, e.y - 10, '+Ramuan Kesehatan', C.green);
+          }
+          break;
+        }
+        case 'kristal': player.energy = Math.min(effectiveMaxEnergy, player.energy + 50); spawnFloatingText(e.x, e.y - 10, '+Energi', C.cyan); break;
         case 'kunci': player.keys++; spawnFloatingText(e.x, e.y - 10, '+Kunci', C.gold); break;
         case 'rupiah': player.rupiah += 25; spawnFloatingText(e.x, e.y - 10, '+25 Rupiah', C.goldLight); break;
+        case 'equipment': {
+          // Parse equipment from subType like "weapon_pedang" or "armor_kulit"
+          const parts = (e.subType || '').split('_');
+          const cat = parts[0]; // weapon, armor, accessory
+          const equipId = parts.slice(1).join('_'); // pedang, kulit, kalung_batu
+          let equipData = null;
+          if (cat === 'weapon' && WEAPONS[equipId]) equipData = { id: equipId, type: 'equipment', category: 'weapon', ...WEAPONS[equipId] };
+          else if (cat === 'armor' && ARMORS[equipId]) equipData = { id: equipId, type: 'equipment', category: 'armor', ...ARMORS[equipId] };
+          else if (cat === 'accessory' && ACCESSORIES[equipId]) equipData = { id: equipId, type: 'equipment', category: 'accessory', ...ACCESSORIES[equipId] };
+          if (equipData) {
+            addItem(equipData);
+            spawnFloatingText(e.x, e.y - 10, `+${equipData.name}`, C.gold);
+          }
+          break;
+        }
       }
     }
   });
 
   // Checkpoint
-  const ptx = Math.floor((player.x + player.w / 2) / 32);
-  const pty = Math.floor((player.y + player.h) / 32);
-  if (tileMap && pty >= 0 && pty < tileMap.length && ptx >= 0 && ptx < tileMap[0].length) {
-    if (tileMap[pty][ptx] === 9) {
+  const cptx = Math.floor((player.x + player.w / 2) / 32);
+  const cpty = Math.floor((player.y + player.h) / 32);
+  if (tileMap && cpty >= 0 && cpty < tileMap.length && cptx >= 0 && cptx < tileMap[0].length) {
+    if (tileMap[cpty][cptx] === 9) {
       player.checkpoint = { x: player.x, y: player.y };
-      tileMap[pty][ptx] = 0;
+      tileMap[cpty][cptx] = 0;
       spawnFloatingText(player.x, player.y - 30, 'Checkpoint!', C.gold);
       spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.gold, 15, 3, 40);
       playSound('checkpoint');
@@ -328,7 +436,7 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
   if (tileMap && player.y > tileMap.length * 32 + 100) playerDie();
 
   // Energy regen
-  if (player.energy < player.maxEnergy) player.energy += 0.05;
+  if (player.energy < effectiveMaxEnergy) player.energy += 0.05;
 
   // Animation
   player.animTimer++;
@@ -341,13 +449,16 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
   else if (player.attacking) player.state = 'attack';
   else if (player.parryTimer > 0) player.state = 'parry';
   else if (player.hurtTimer > 0) player.state = 'hurt';
+  else if (player.stunTimer > 0) player.state = 'hurt';
   else if (!player.grounded && player.vy < 0) player.state = 'jump';
   else if (!player.grounded) player.state = 'fall';
   else if (Math.abs(player.vx) > 0.5) player.state = 'run';
   else player.state = 'idle';
 
-  // Boss trigger
-  if (player.x > 68 * 32 && puzzleState && puzzleState.solved && !bossActive && boss && boss.alive) {
+  // Boss trigger - check puzzle or just position for later stages
+  const stageId = player.currentStageId || 0;
+  const triggerX = [68, 75, 82, 90, 100][stageId] || 68;
+  if (player.x > triggerX * 32 && (stageId === 0 ? (puzzleState && puzzleState.solved) : true) && !bossActive && boss && boss.alive) {
     return 'triggerBoss';
   }
   return null;
@@ -388,11 +499,18 @@ export function damagePlayer(amount) {
     return;
   }
   if (player.healing) player.healing = false;
-  player.hp -= amount;
+
+  // Apply defense from equipment
+  const stats = getStats();
+  const defense = stats.defense || 0;
+  const reducedDamage = Math.max(1, amount - defense);
+
+  player.hp -= reducedDamage;
   player.invincible = INV_FRAMES;
   player.hurtTimer = 15;
   playSound('damage');
   spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.red, 8, 3);
+  spawnFloatingText(player.x + player.w / 2, player.y - 30, `-${reducedDamage}`, C.red);
   shakeRef.timer = 8; shakeRef.intensity = 4;
   if (player.hp <= 0) { player.hp = 0; playerDie(); }
 }
@@ -414,10 +532,21 @@ export function damageEnemy(e, amount, entities) {
   if (e.hp <= 0) {
     e.alive = false;
     spawnParticle(e.x + e.w / 2, e.y + e.h / 2, C.stone, 15, 4, 40);
-    gainExp(e.enemyType === 'patung' ? 20 : 10);
+    const exp = e.exp || (e.enemyType === 'patung' ? 20 : 10);
+    gainExp(exp);
+    const rupiahDrop = e.rupiahDrop || 10;
     if (Math.random() < 0.3) {
-      player.rupiah += 10;
-      spawnFloatingText(e.x, e.y - 20, '+10 Rupiah', C.goldLight);
+      player.rupiah += rupiahDrop;
+      spawnFloatingText(e.x, e.y - 20, `+${rupiahDrop} Rupiah`, C.goldLight);
+    }
+    // Random potion drop
+    if (Math.random() < 0.15) {
+      const potionTypes = ['health', 'stamina', 'strength', 'defense', 'speed'];
+      const dropType = potionTypes[Math.floor(Math.random() * potionTypes.length)];
+      entities.push({
+        type: 'item', itemType: 'potion', subType: dropType,
+        x: e.x, y: e.y, w: 16, h: 16, collected: false, bobOffset: Math.random() * Math.PI * 2,
+      });
     }
   }
 }
@@ -427,7 +556,7 @@ export function damageBoss(boss, amount) {
   boss.posture = Math.min(boss.maxPosture, boss.posture + amount * 0.8);
   if (boss.posture >= boss.maxPosture && !boss.staggered) {
     boss.staggered = true;
-    boss.staggerTimer = 60; // BOSS_STAGGER_DURATION
+    boss.staggerTimer = 60;
     boss.isTelegraphing = false;
     boss.telegraphTimer = 0;
     boss.recoveryTimer = 0;
@@ -447,8 +576,11 @@ export function damageBoss(boss, amount) {
   if (boss.hp <= 0) {
     boss.alive = false;
     spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 2, C.gold, 40, 6, 60);
-    gainExp(100);
+    const bossExp = [100, 150, 200, 250, 400][boss.stageId || 0] || 100;
+    gainExp(bossExp);
     player.artifacts++;
+    const bossRupiah = [50, 80, 120, 160, 250][boss.stageId || 0] || 50;
+    player.rupiah += bossRupiah;
     setTimeout(() => { gameStateRef.value = 'victory'; }, 1500);
   }
 }
@@ -460,19 +592,26 @@ export function gainExp(amount) {
     player.exp -= player.expNext;
     player.level++;
     player.expNext = Math.floor(player.expNext * 1.5);
-    player.maxHp += 10; player.hp = player.maxHp;
-    player.maxEnergy += 5; player.energy = player.maxEnergy;
-    player.maxStamina += 5; player.stamina = player.maxStamina;
+    // Base stat increases
+    const stats = getStats();
+    player.hp = stats.maxHp;
+    player.energy = stats.maxEnergy;
+    player.stamina = stats.maxStamina;
+    // Grant skill points
+    inventory.skillPoints += SKILL_POINTS_PER_LEVEL;
     spawnFloatingText(player.x, player.y - 50, `LEVEL UP! Lv.${player.level}`, C.gold);
+    spawnFloatingText(player.x, player.y - 70, `+${SKILL_POINTS_PER_LEVEL} Poin Keahlian`, C.cyan);
     spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.gold, 25, 5, 50);
+    playSound('checkpoint');
   }
 }
 
 export function resetPlayer() {
-  const startY = GROUND_Y - player.h;
+  const stats = getComputedStats(1);
+  const startY = GROUND_Y - 36;
   Object.assign(player, {
     x: 80, y: startY, prevY: startY, vx: 0, vy: 0,
-    hp: 100, maxHp: 100, level: 1, exp: 0, expNext: 50,
+    hp: stats.maxHp, maxHp: stats.maxHp, level: 1, exp: 0, expNext: 50,
     facing: 1, grounded: false,
     coyoteTimer: 0, jumpBufferTimer: 0,
     attacking: false, attackTimer: 0, attackCombo: 0,
@@ -481,22 +620,25 @@ export function resetPlayer() {
     parryTimer: 0, parryWindow: 0,
     dodging: false, dodgeTimer: 0, dodgeDir: 1,
     invincible: 0, skillCooldown: 0, skillMaxCooldown: 180,
-    energy: 100, maxEnergy: 100,
-    stamina: MAX_STAMINA, maxStamina: MAX_STAMINA,
+    energy: stats.maxEnergy, maxEnergy: stats.maxEnergy,
+    stamina: stats.maxStamina, maxStamina: stats.maxStamina,
     healing: false, healingTimer: 0, healTicksRemaining: 0, healPerTick: 0,
     artifacts: 0, rupiah: 0,
-    potions: 3, keys: 0, hurtTimer: 0,
+    potions: 0, keys: 0, hurtTimer: 0,
     checkpoint: { x: 80, y: startY },
+    poisonTimer: 0, stunTimer: 0, slowTimer: 0, lavaDamageTimer: 0,
+    currentStageId: 0,
   });
 }
 
 export function respawnPlayer() {
+  const stats = getStats();
   player.x = player.checkpoint.x;
   player.y = player.checkpoint.y;
   player.prevY = player.y;
-  player.hp = player.maxHp;
-  player.stamina = player.maxStamina;
-  player.energy = player.maxEnergy;
+  player.hp = stats.maxHp;
+  player.stamina = stats.maxStamina;
+  player.energy = stats.maxEnergy;
   player.vy = 0; player.vx = 0;
   player.invincible = 60;
   player.attacking = false; player.heavyAttacking = false;
@@ -504,5 +646,6 @@ export function respawnPlayer() {
   player.parryTimer = 0; player.comboWindow = 0;
   player.attackCombo = 0; player.hurtTimer = 0;
   player.coyoteTimer = 0; player.jumpBufferTimer = 0;
+  player.poisonTimer = 0; player.stunTimer = 0; player.slowTimer = 0;
   gameStateRef.value = 'playing';
 }

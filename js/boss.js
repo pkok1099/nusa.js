@@ -1,5 +1,5 @@
 // ============================================================
-// boss.js — Boss update logic and attack execution
+// boss.js — Boss update logic and attack execution for 5 bosses
 // ============================================================
 
 import {
@@ -65,16 +65,18 @@ export function updateBoss(boss, bossActive, hitStopTimer, player) {
   // Chase player
   const dx = (player.x + player.w / 2) - (boss.x + boss.w / 2);
   boss.facing = dx > 0 ? 1 : -1;
-  let moveSpeed = boss.phase === 3 ? 2.2 : (boss.phase === 2 ? 1.8 : 1.2);
+
+  // Boss-type specific chase speed
+  let moveSpeed = getBossChaseSpeed(boss);
   boss.vx = boss.facing * moveSpeed;
 
   // Attack pattern selection
   boss.attackTimer++;
-  let attackThreshold = boss.phase === 3 ? 55 : (boss.phase === 2 ? 75 : 100);
+  let attackThreshold = getBossAttackThreshold(boss);
 
   if (boss.attackTimer > attackThreshold) {
     boss.attackTimer = 0;
-    chooseBossAttack(boss, dx);
+    chooseBossAttack(boss, dx, player);
   }
 
   // Move X
@@ -98,7 +100,7 @@ export function updateBoss(boss, bossActive, hitStopTimer, player) {
   // Contact damage
   const checkOverlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
   if (!boss.isTelegraphing && boss.recoveryTimer <= 0 && checkOverlap(player, boss) && player.invincible <= 0) {
-    damagePlayer(10);
+    damagePlayer(10 + boss.stageId * 3);
   }
 
   boss.animTimer++;
@@ -115,8 +117,39 @@ function applyBossGravity(boss) {
   });
 }
 
-function chooseBossAttack(boss, dx) {
+function getBossChaseSpeed(boss) {
+  const sid = boss.stageId || 0;
+  const base = [1.2, 1.5, 1.8, 1.4, 2.0][sid] || 1.2;
+  if (boss.phase === 3) return base * 1.5;
+  if (boss.phase === 2) return base * 1.25;
+  return base;
+}
+
+function getBossAttackThreshold(boss) {
+  const sid = boss.stageId || 0;
+  const base = [100, 80, 70, 75, 60][sid] || 100;
+  if (boss.phase === 3) return base * 0.55;
+  if (boss.phase === 2) return base * 0.75;
+  return base;
+}
+
+// ---- Boss attack selection per type ----
+function chooseBossAttack(boss, dx, player) {
+  const sid = boss.stageId || 0;
   const absDx = Math.abs(dx);
+
+  switch (sid) {
+    case 0: choosePenjagaBatuAttack(boss, absDx); break;
+    case 1: chooseRajaHutanAttack(boss, absDx); break;
+    case 2: chooseNagaApiAttack(boss, absDx); break;
+    case 3: chooseRaksasaLautAttack(boss, absDx); break;
+    case 4: chooseRaksasaTerakhirAttack(boss, absDx); break;
+    default: choosePenjagaBatuAttack(boss, absDx); break;
+  }
+}
+
+// Boss 0: Penjaga Batu — armSwipe, groundPound, throwRocks, charge, aoeStomp
+function choosePenjagaBatuAttack(boss, absDx) {
   if (boss.phase === 1) {
     if (absDx < 120) {
       if (Math.random() < 0.5) {
@@ -140,22 +173,126 @@ function chooseBossAttack(boss, dx) {
   }
 }
 
+// Boss 1: Raja Hutan — pounce, clawCombo, summonMinions, roar (stun)
+function chooseRajaHutanAttack(boss, absDx) {
+  if (boss.phase === 1) {
+    const r = Math.random();
+    if (r < 0.5) { boss.isTelegraphing = true; boss.telegraphType = 'pounce'; boss.telegraphTimer = 25; }
+    else { boss.isTelegraphing = true; boss.telegraphType = 'clawCombo'; boss.telegraphTimer = 20; }
+  } else if (boss.phase === 2) {
+    const r = Math.random();
+    if (r < 0.3) { boss.isTelegraphing = true; boss.telegraphType = 'pounce'; boss.telegraphTimer = 18; }
+    else if (r < 0.55) { boss.isTelegraphing = true; boss.telegraphType = 'clawCombo'; boss.telegraphTimer = 15; }
+    else if (r < 0.8) { boss.isTelegraphing = true; boss.telegraphType = 'summonMinions'; boss.telegraphTimer = 30; }
+    else { boss.isTelegraphing = true; boss.telegraphType = 'roar'; boss.telegraphTimer = 25; }
+  } else {
+    const r = Math.random();
+    if (r < 0.2) { boss.isTelegraphing = true; boss.telegraphType = 'pounce'; boss.telegraphTimer = 12; }
+    else if (r < 0.4) { boss.isTelegraphing = true; boss.telegraphType = 'clawCombo'; boss.telegraphTimer = 10; }
+    else if (r < 0.6) { boss.isTelegraphing = true; boss.telegraphType = 'summonMinions'; boss.telegraphTimer = 20; }
+    else if (r < 0.8) { boss.isTelegraphing = true; boss.telegraphType = 'roar'; boss.telegraphTimer = 15; }
+    else { boss.isTelegraphing = true; boss.telegraphType = 'groundPound'; boss.telegraphTimer = 30; }
+  }
+}
+
+// Boss 2: Naga Api — fireBreath, tailSwipe, meteorRain, fireCharge
+function chooseNagaApiAttack(boss, absDx) {
+  if (boss.phase === 1) {
+    const r = Math.random();
+    if (r < 0.4) { boss.isTelegraphing = true; boss.telegraphType = 'fireBreath'; boss.telegraphTimer = 30; }
+    else if (r < 0.7) { boss.isTelegraphing = true; boss.telegraphType = 'tailSwipe'; boss.telegraphTimer = 20; }
+    else { boss.isTelegraphing = true; boss.telegraphType = 'fireCharge'; boss.telegraphTimer = 40; }
+  } else if (boss.phase === 2) {
+    const r = Math.random();
+    if (r < 0.3) { boss.isTelegraphing = true; boss.telegraphType = 'fireBreath'; boss.telegraphTimer = 20; }
+    else if (r < 0.5) { boss.isTelegraphing = true; boss.telegraphType = 'tailSwipe'; boss.telegraphTimer = 15; }
+    else if (r < 0.75) { boss.isTelegraphing = true; boss.telegraphType = 'meteorRain'; boss.telegraphTimer = 30; }
+    else { boss.isTelegraphing = true; boss.telegraphType = 'fireCharge'; boss.telegraphTimer = 25; }
+  } else {
+    const r = Math.random();
+    if (r < 0.2) { boss.isTelegraphing = true; boss.telegraphType = 'fireBreath'; boss.telegraphTimer = 15; }
+    else if (r < 0.4) { boss.isTelegraphing = true; boss.telegraphType = 'meteorRain'; boss.telegraphTimer = 20; }
+    else if (r < 0.6) { boss.isTelegraphing = true; boss.telegraphType = 'fireCharge'; boss.telegraphTimer = 18; }
+    else if (r < 0.8) { boss.isTelegraphing = true; boss.telegraphType = 'tailSwipe'; boss.telegraphTimer = 10; }
+    else { boss.isTelegraphing = true; boss.telegraphType = 'meteorRain'; boss.telegraphTimer = 15; }
+  }
+}
+
+// Boss 3: Raksasa Laut — tidalWave, tentacleSlam, whirlpool, frostBreath
+function chooseRaksasaLautAttack(boss, absDx) {
+  if (boss.phase === 1) {
+    const r = Math.random();
+    if (r < 0.4) { boss.isTelegraphing = true; boss.telegraphType = 'tentacleSlam'; boss.telegraphTimer = 25; }
+    else if (r < 0.7) { boss.isTelegraphing = true; boss.telegraphType = 'frostBreath'; boss.telegraphTimer = 30; }
+    else { boss.isTelegraphing = true; boss.telegraphType = 'tidalWave'; boss.telegraphTimer = 35; }
+  } else if (boss.phase === 2) {
+    const r = Math.random();
+    if (r < 0.3) { boss.isTelegraphing = true; boss.telegraphType = 'tentacleSlam'; boss.telegraphTimer = 18; }
+    else if (r < 0.5) { boss.isTelegraphing = true; boss.telegraphType = 'frostBreath'; boss.telegraphTimer = 22; }
+    else if (r < 0.75) { boss.isTelegraphing = true; boss.telegraphType = 'tidalWave'; boss.telegraphTimer = 25; }
+    else { boss.isTelegraphing = true; boss.telegraphType = 'whirlpool'; boss.telegraphTimer = 35; }
+  } else {
+    const r = Math.random();
+    if (r < 0.2) { boss.isTelegraphing = true; boss.telegraphType = 'tentacleSlam'; boss.telegraphTimer = 12; }
+    else if (r < 0.4) { boss.isTelegraphing = true; boss.telegraphType = 'tidalWave'; boss.telegraphTimer = 18; }
+    else if (r < 0.6) { boss.isTelegraphing = true; boss.telegraphType = 'whirlpool'; boss.telegraphTimer = 25; }
+    else if (r < 0.8) { boss.isTelegraphing = true; boss.telegraphType = 'frostBreath'; boss.telegraphTimer = 15; }
+    else { boss.isTelegraphing = true; boss.telegraphType = 'aoeStomp'; boss.telegraphTimer = 30; }
+  }
+}
+
+// Boss 4: Raksasa Terakhir — ALL previous attacks + divineStrike, shieldBash, earthquake, summonPhase
+function chooseRaksasaTerakhirAttack(boss, absDx) {
+  if (boss.phase === 1) {
+    const r = Math.random();
+    if (r < 0.25) { boss.isTelegraphing = true; boss.telegraphType = 'divineStrike'; boss.telegraphTimer = 30; }
+    else if (r < 0.5) { boss.isTelegraphing = true; boss.telegraphType = 'shieldBash'; boss.telegraphTimer = 25; }
+    else if (r < 0.75) { boss.isTelegraphing = true; boss.telegraphType = 'armSwipe'; boss.telegraphTimer = 20; }
+    else { boss.isTelegraphing = true; boss.telegraphType = 'charge'; boss.telegraphTimer = 35; }
+  } else if (boss.phase === 2) {
+    const r = Math.random();
+    if (r < 0.2) { boss.isTelegraphing = true; boss.telegraphType = 'divineStrike'; boss.telegraphTimer = 20; }
+    else if (r < 0.35) { boss.isTelegraphing = true; boss.telegraphType = 'earthquake'; boss.telegraphTimer = 35; }
+    else if (r < 0.5) { boss.isTelegraphing = true; boss.telegraphType = 'fireBreath'; boss.telegraphTimer = 20; }
+    else if (r < 0.65) { boss.isTelegraphing = true; boss.telegraphType = 'tentacleSlam'; boss.telegraphTimer = 18; }
+    else if (r < 0.8) { boss.isTelegraphing = true; boss.telegraphType = 'summonPhase'; boss.telegraphTimer = 30; }
+    else { boss.isTelegraphing = true; boss.telegraphType = 'shieldBash'; boss.telegraphTimer = 15; }
+  } else {
+    const r = Math.random();
+    if (r < 0.15) { boss.isTelegraphing = true; boss.telegraphType = 'divineStrike'; boss.telegraphTimer = 12; }
+    else if (r < 0.3) { boss.isTelegraphing = true; boss.telegraphType = 'earthquake'; boss.telegraphTimer = 20; }
+    else if (r < 0.4) { boss.isTelegraphing = true; boss.telegraphType = 'fireBreath'; boss.telegraphTimer = 12; }
+    else if (r < 0.5) { boss.isTelegraphing = true; boss.telegraphType = 'meteorRain'; boss.telegraphTimer = 15; }
+    else if (r < 0.6) { boss.isTelegraphing = true; boss.telegraphType = 'summonPhase'; boss.telegraphTimer = 18; }
+    else if (r < 0.7) { boss.isTelegraphing = true; boss.telegraphType = 'tidalWave'; boss.telegraphTimer = 15; }
+    else if (r < 0.8) { boss.isTelegraphing = true; boss.telegraphType = 'aoeStomp'; boss.telegraphTimer = 25; }
+    else if (r < 0.9) { boss.isTelegraphing = true; boss.telegraphType = 'charge'; boss.telegraphTimer = 12; }
+    else { boss.isTelegraphing = true; boss.telegraphType = 'shieldBash'; boss.telegraphTimer = 10; }
+  }
+}
+
+// ---- Execute boss attack ----
 export function executeBossAttack(boss, player) {
   const dx = (player.x + player.w / 2) - (boss.x + boss.w / 2);
   const dist = Math.abs(dx);
   const checkOverlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  const dmgMult = boss.phase === 3 ? 1.5 : (boss.phase === 2 ? 1.2 : 1.0);
 
   switch (boss.telegraphType) {
     case 'armSwipe':
-      if (dist < 110 && player.invincible <= 0) {
-        damagePlayer(boss.phase === 3 ? 25 : (boss.phase === 2 ? 20 : 15));
-      }
+      if (dist < 110 && player.invincible <= 0)
+        damagePlayer(Math.floor(15 * dmgMult));
       spawnParticle(boss.x + boss.w / 2 + boss.facing * 40, boss.y + boss.h / 2, C.stone, 8, 4);
+      playSound('hit');
       break;
+
     case 'groundPound':
-      if (dist < 120 && player.invincible <= 0) damagePlayer(22);
+      if (dist < 120 && player.invincible <= 0)
+        damagePlayer(Math.floor(22 * dmgMult));
       spawnParticle(boss.x + boss.w / 2, boss.y + boss.h, C.stone, 15, 5);
+      playSound('heavyAttack');
       break;
+
     case 'throwRocks':
       for (let i = 0; i < 3; i++) {
         const angle = Math.PI / 2 + (i - 1) * 0.3;
@@ -163,10 +300,12 @@ export function executeBossAttack(boss, player) {
           x: boss.x + boss.w / 2, y: boss.y,
           vx: Math.cos(angle) * -boss.facing * 4, vy: Math.sin(angle) * -4,
           life: 60, maxLife: 60, color: C.stoneDark, size: 6,
-          isProjectile: true, damage: 12,
+          isProjectile: true, damage: Math.floor(12 * dmgMult),
         });
       }
+      playSound('hit');
       break;
+
     case 'throwRocks5':
       for (let i = 0; i < 5; i++) {
         const angle = Math.PI / 2 + (i - 2) * 0.25;
@@ -174,23 +313,222 @@ export function executeBossAttack(boss, player) {
           x: boss.x + boss.w / 2, y: boss.y,
           vx: Math.cos(angle) * -boss.facing * 5, vy: Math.sin(angle) * -5,
           life: 50, maxLife: 50, color: C.stoneDark, size: 7,
-          isProjectile: true, damage: 14,
+          isProjectile: true, damage: Math.floor(14 * dmgMult),
         });
       }
+      playSound('hit');
       break;
+
     case 'charge':
       boss.vx = boss.facing * 6;
       boss.x += boss.vx * 5;
       if (checkOverlap(player, boss) && player.invincible <= 0)
-        damagePlayer(boss.phase === 3 ? 28 : 20);
+        damagePlayer(Math.floor(20 * dmgMult));
       spawnParticle(boss.x + boss.w / 2, boss.y + boss.h, C.stoneDark, 10, 3);
+      playSound('heavyAttack');
       break;
+
     case 'aoeStomp':
-      if (dist < 150 && player.invincible <= 0) damagePlayer(25);
+      if (dist < 150 && player.invincible <= 0)
+        damagePlayer(Math.floor(25 * dmgMult));
       spawnParticle(boss.x + boss.w / 2, boss.y + boss.h, C.red, 20, 6);
       spawnParticle(boss.x + boss.w / 2 - 50, boss.y + boss.h, C.stone, 8, 3);
       spawnParticle(boss.x + boss.w / 2 + 50, boss.y + boss.h, C.stone, 8, 3);
+      playSound('heavyAttack');
+      break;
+
+    // Raja Hutan attacks
+    case 'pounce': {
+      const pounceSpeed = boss.facing * 7;
+      boss.x += pounceSpeed * 3;
+      if (checkOverlap(player, boss) && player.invincible <= 0)
+        damagePlayer(Math.floor(20 * dmgMult));
+      spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 2, C.grassLight, 10, 4);
+      playSound('heavyAttack');
+      break;
+    }
+
+    case 'clawCombo':
+      for (let i = 0; i < 3; i++) {
+        setTimeout(() => {
+          if (!boss.alive) return;
+          const atkBox = {
+            x: boss.facing > 0 ? boss.x + boss.w : boss.x - 60,
+            y: boss.y, w: 60, h: boss.h,
+          };
+          if (checkOverlap(player, atkBox) && player.invincible <= 0)
+            damagePlayer(Math.floor(15 * dmgMult));
+          spawnParticle(boss.x + boss.w / 2 + boss.facing * 30, boss.y + boss.h / 2, C.goldDark, 5, 3);
+        }, i * 150);
+      }
+      playSound('hit');
+      break;
+
+    case 'summonMinions':
+      boss.summonCount = (boss.summonCount || 0) + 1;
+      spawnFloatingText(boss.x + boss.w / 2, boss.y - 20, 'Memanggil!', C.red);
+      spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 2, C.goldDark, 15, 5, 30);
+      playSound('boss');
+      break;
+
+    case 'roar':
+      if (dist < 130 && player.invincible <= 0) {
+        damagePlayer(Math.floor(10 * dmgMult));
+        if (player.stunTimer !== undefined) player.stunTimer = 45;
+        spawnFloatingText(player.x, player.y - 30, 'Stun!', C.orange);
+      }
+      spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 4, C.orange, 12, 5, 40);
+      playSound('boss');
+      break;
+
+    // Naga Api attacks
+    case 'fireBreath': {
+      // Cone of fire projectiles
+      for (let i = 0; i < 7; i++) {
+        const angle = (i - 3) * 0.15;
+        const dir = boss.facing;
+        particlesList.push({
+          x: boss.x + boss.w / 2, y: boss.y + boss.h / 3,
+          vx: dir * (4 + Math.random() * 2) + Math.sin(angle) * 2,
+          vy: Math.cos(angle) * 1.5 - 1,
+          life: 45, maxLife: 45, color: C.orange, size: 5,
+          isProjectile: true, damage: Math.floor(12 * dmgMult),
+        });
+      }
+      spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 3, C.lava, 10, 4, 20);
+      playSound('heavyAttack');
+      break;
+    }
+
+    case 'tailSwipe':
+      if (dist < 100 && player.invincible <= 0)
+        damagePlayer(Math.floor(18 * dmgMult));
+      spawnParticle(boss.x + boss.w / 2 - boss.facing * 40, boss.y + boss.h / 2, C.red, 8, 4);
+      playSound('hit');
+      break;
+
+    case 'meteorRain':
+      for (let i = 0; i < 5; i++) {
+        setTimeout(() => {
+          if (!boss.alive) return;
+          const mx = boss.x + (Math.random() - 0.5) * 300;
+          particlesList.push({
+            x: mx, y: boss.y - 200,
+            vx: 0, vy: 5,
+            life: 50, maxLife: 50, color: C.lava, size: 8,
+            isProjectile: true, damage: Math.floor(15 * dmgMult),
+          });
+        }, i * 200);
+      }
+      playSound('boss');
+      break;
+
+    case 'fireCharge': {
+      boss.vx = boss.facing * 8;
+      boss.x += boss.vx * 4;
+      if (checkOverlap(player, boss) && player.invincible <= 0)
+        damagePlayer(Math.floor(25 * dmgMult));
+      spawnParticle(boss.x + boss.w / 2, boss.y + boss.h, C.lava, 15, 5);
+      playSound('heavyAttack');
+      break;
+    }
+
+    // Raksasa Laut attacks
+    case 'tidalWave':
+      for (let i = 0; i < 8; i++) {
+        const angle = (i - 4) * 0.2;
+        particlesList.push({
+          x: boss.x + boss.w / 2, y: boss.y + boss.h / 2,
+          vx: boss.facing * (3 + i * 0.5), vy: Math.sin(angle) * 2 - 2,
+          life: 60, maxLife: 60, color: C.water, size: 6,
+          isProjectile: true, damage: Math.floor(10 * dmgMult),
+        });
+      }
+      spawnParticle(boss.x + boss.w / 2, boss.y + boss.h, C.cyan, 15, 5);
+      playSound('heavyAttack');
+      break;
+
+    case 'tentacleSlam':
+      if (dist < 130 && player.invincible <= 0)
+        damagePlayer(Math.floor(22 * dmgMult));
+      spawnParticle(boss.x + boss.w / 2 - boss.facing * 50, boss.y + boss.h, C.water, 10, 5);
+      spawnParticle(boss.x + boss.w / 2 + boss.facing * 50, boss.y + boss.h, C.water, 10, 5);
+      playSound('heavyAttack');
+      break;
+
+    case 'whirlpool': {
+      // Pull player toward boss
+      const pullStrength = 3;
+      if (player.x < boss.x) player.x += pullStrength;
+      else player.x -= pullStrength;
+      if (dist < 60 && player.invincible <= 0)
+        damagePlayer(Math.floor(15 * dmgMult));
+      spawnParticle(boss.x + boss.w / 2, boss.y + boss.h, C.cyan, 20, 4, 50);
+      spawnFloatingText(boss.x + boss.w / 2, boss.y - 20, 'Whirlpool!', C.cyan);
+      playSound('boss');
+      break;
+    }
+
+    case 'frostBreath':
+      for (let i = 0; i < 5; i++) {
+        const angle = (i - 2) * 0.2;
+        particlesList.push({
+          x: boss.x + boss.w / 2, y: boss.y + boss.h / 3,
+          vx: boss.facing * (3 + i * 0.3) + Math.sin(angle) * 1,
+          vy: Math.cos(angle) * 1.5,
+          life: 50, maxLife: 50, color: C.cyan, size: 5,
+          isProjectile: true, damage: Math.floor(10 * dmgMult),
+        });
+      }
+      // Slow player
+      if (dist < 100 && player.invincible <= 0) {
+        if (player.slowTimer !== undefined) player.slowTimer = 120;
+        spawnFloatingText(player.x, player.y - 20, 'Pelan!', C.cyan);
+      }
+      spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 3, C.blue, 8, 3, 15);
+      playSound('heavyAttack');
+      break;
+
+    // Raksasa Terakhir attacks
+    case 'divineStrike':
+      if (dist < 140 && player.invincible <= 0)
+        damagePlayer(Math.floor(30 * dmgMult));
+      spawnParticle(boss.x + boss.w / 2, boss.y, C.goldLight, 25, 6, 50);
+      spawnParticle(boss.x + boss.w / 2, boss.y + boss.h, C.gold, 15, 5);
+      spawnFloatingText(boss.x + boss.w / 2, boss.y - 30, 'Serangan Dewa!', C.goldLight);
+      playSound('skill');
+      break;
+
+    case 'shieldBash':
+      boss.vx = boss.facing * 7;
+      boss.x += boss.vx * 3;
+      if (checkOverlap(player, boss) && player.invincible <= 0) {
+        damagePlayer(Math.floor(18 * dmgMult));
+        if (player.stunTimer !== undefined) player.stunTimer = 30;
+        spawnFloatingText(player.x, player.y - 20, 'Stun!', C.orange);
+      }
+      spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 2, C.gold, 10, 4);
+      playSound('heavyAttack');
+      break;
+
+    case 'earthquake':
+      if (dist < 180 && player.invincible <= 0)
+        damagePlayer(Math.floor(20 * dmgMult));
+      spawnParticle(boss.x + boss.w / 2 - 60, boss.y + boss.h, C.stone, 10, 4, 40);
+      spawnParticle(boss.x + boss.w / 2, boss.y + boss.h, C.red, 15, 5, 40);
+      spawnParticle(boss.x + boss.w / 2 + 60, boss.y + boss.h, C.stone, 10, 4, 40);
+      playSound('boss');
+      break;
+
+    case 'summonPhase':
+      boss.summonCount = (boss.summonCount || 0) + 2;
+      spawnFloatingText(boss.x + boss.w / 2, boss.y - 30, 'Raksasa Memanggil!', C.red);
+      spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 2, C.red, 20, 5, 40);
+      playSound('boss');
+      break;
+
+    default:
+      playSound('hit');
       break;
   }
-  playSound('hit');
 }

@@ -88,3 +88,98 @@ export const C = {
   stamina: '#CCAA00', staminaDark: '#554400',
   parryGold: '#FFD700',
 };
+
+// ---- EQUIPMENT TYPES ----
+export const EQUIPMENT_SLOTS = ['weapon', 'armor', 'accessory'];
+
+// Weapon definitions
+export const WEAPONS = {
+  keris:      { name: 'Keris', attack: 5, speed: 0, desc: 'Keris sederhana', price: 0 },
+  pedang:     { name: 'Pedang Besi', attack: 12, speed: -0.2, desc: 'Pedang besi yang tajam', price: 150 },
+  tombak:     { name: 'Tombak Naga', attack: 18, speed: -0.5, desc: 'Tombak bertuliskan naga kuno', price: 350 },
+  keris_emas: { name: 'Keris Emas', attack: 25, speed: 0.3, desc: 'Keris pusaka kerajaan', price: 600 },
+  panah_api:  { name: 'Panah Api', attack: 20, speed: 0.5, desc: 'Panah berbakar bara api', price: 500 },
+  trisula:    { name: 'Trisula Dewa', attack: 35, speed: 0, desc: 'Senjata dewa pencipta', price: 1000 },
+};
+
+// Armor definitions
+export const ARMORS = {
+  kain:       { name: 'Kain Biasa', defense: 0, desc: 'Kain penutup tubuh', price: 0 },
+  kulit:      { name: 'Baju Kulit', defense: 5, desc: 'Baju dari kulit binatang', price: 120 },
+  besi:       { name: 'Besi Tempa', defense: 12, desc: 'Baju besi pandai besi', price: 300 },
+  perak:      { name: 'Baju Perak', defense: 18, desc: 'Baju perak bangsawan', price: 550 },
+  emas:       { name: 'Baju Emas', defense: 25, desc: 'Baju emas kerajaan', price: 900 },
+  naga:       { name: 'Baju Naga', defense: 35, desc: 'Baja legendaris sisik naga', price: 1500 },
+};
+
+// Accessory definitions
+export const ACCESSORIES = {
+  cincin_besi:    { name: 'Cincin Besi', effect: 'hp', value: 20, desc: '+20 HP Maks', price: 100 },
+  kalung_batu:    { name: 'Kalung Batu', effect: 'stamina', value: 15, desc: '+15 Stamina Maks', price: 100 },
+  gelang_emas:    { name: 'Gelang Emas', effect: 'energy', value: 10, desc: '+10 Energi Maks', price: 150 },
+  cincin_naga:    { name: 'Cincin Naga', effect: 'attack', value: 8, desc: '+8 Serangan', price: 400 },
+  kalung_dewa:    { name: 'Kalung Dewa', effect: 'defense', value: 10, desc: '+10 Pertahanan', price: 400 },
+  gelang_angin:   { name: 'Gelang Angin', effect: 'speed', value: 0.5, desc: '+0.5 Kecepatan', price: 350 },
+};
+
+// Potion types
+export const POTIONS = {
+  health:      { name: 'Ramuan Kesehatan', type: 'health', value: 40, desc: 'Pulihkan 40 HP', price: 30 },
+  stamina:     { name: 'Ramuan Stamina', type: 'stamina', value: 50, desc: 'Pulihkan 50 Stamina', price: 25 },
+  strength:    { name: 'Ramuan Kekuatan', type: 'buff', buffType: 'attack', value: 10, duration: 600, desc: '+10 Serangan (10s)', price: 80 },
+  defense:     { name: 'Ramuan Pertahanan', type: 'buff', buffType: 'defense', value: 10, duration: 600, desc: '+10 Pertahanan (10s)', price: 80 },
+  speed:       { name: 'Ramuan Kecepatan', type: 'buff', buffType: 'speed', value: 1, duration: 480, desc: '+1 Kecepatan (8s)', price: 60 },
+};
+
+// Stage definitions (5 stages)
+export const STAGES = [
+  {
+    id: 0, name: 'Candi Borobudur', subtitle: 'Bangkit dari Debu Waktu',
+    artifact: 'Artefak Tanah', bg1: '#0D0A1A', bg2: '#1A0A2E',
+    bossName: 'Penjaga Batu', bossHp: 350, bossSpeed: 1.5, bossW: 48, bossH: 56,
+    unlocked: true, width: 80, height: 20,
+    enemyTypes: ['batu_kecil', 'patung'],
+    introDialog: ['Arjuna... kamu telah memilih untuk memulai perjalanan ini.', 'Candi Borobudur adalah tempat pertamamu.', 'Artefak Tanah tersembunyi di dalam candi ini, dijaga oleh Penjaga Batu.', 'Gunakan kerisku untuk melawan, dan cari jalan melalui puzzle kuno.', 'Semoga leluhur membimbingmu, Anak Jawa.'],
+  },
+  {
+    id: 1, name: 'Hutan Borneo', subtitle: 'Rimba Kehilangan',
+    artifact: 'Artefak Kayu', bg1: '#0A1A0D', bg2: '#0A2E15',
+    bossName: 'Raja Hutan', bossHp: 500, bossSpeed: 2.0, bossW: 52, bossH: 60,
+    unlocked: false, width: 90, height: 22,
+    enemyTypes: ['harimau', 'ular'],
+    introDialog: ['Hutan Borneo menyimpan rahasia kuno...', 'Raja Hutan menjaga Artefak Kayu.', 'Waspadai serangan cepat dari bayangan pohon.', 'Artefak Kayu adalah kunci kekuatan alam.'],
+  },
+  {
+    id: 2, name: 'Gunung Bromo', subtitle: 'Neraka Api',
+    artifact: 'Artefak Api', bg1: '#1A0A0A', bg2: '#2E150A',
+    bossName: 'Naga Api', bossHp: 700, bossSpeed: 2.5, bossW: 56, bossH: 64,
+    unlocked: false, width: 100, height: 24,
+    enemyTypes: ['iblis_kecil', 'golem_api'],
+    introDialog: ['Gunung Bromo... gerbang dunia bawah.', 'Naga Api bangkit dari kawah.', 'Api membakar segalanya — kecuali yang paling kuat.', 'Artefak Api tersembunyi di puncak kawah.'],
+  },
+  {
+    id: 3, name: 'Laut Bali', subtitle: 'Kedalaman Tanpa Dasar',
+    artifact: 'Artefak Air', bg1: '#0A0A1A', bg2: '#0A152E',
+    bossName: 'Raksasa Laut', bossHp: 900, bossSpeed: 1.8, bossW: 60, bossH: 70,
+    unlocked: false, width: 110, height: 26,
+    enemyTypes: ['ikan_pedang', 'ubur_ubur'],
+    introDialog: ['Laut Bali menyimpan misteri purba.', 'Raksasa Laut terbangun dari tidurnya.', 'Jangan biarkan ombak menelanmu.', 'Artefak Air ada di dasar lautan.'],
+  },
+  {
+    id: 4, name: 'Candi Prambanan', subtitle: 'Akhir Segala Awal',
+    artifact: 'Artefak Langit', bg1: '#1A1A0A', bg2: '#2E2E0A',
+    bossName: 'Raksasa Terakhir', bossHp: 1200, bossSpeed: 2.8, bossW: 64, bossH: 72,
+    unlocked: false, width: 120, height: 28,
+    enemyTypes: ['prajurit_jahat', 'raksasa_kecil'],
+    introDialog: ['Candi Prambanan... tempat terakhir.', 'Raksasa Terakhir menunggu di puncak.', 'Semua artefak harus dikumpulkan.', 'Ini akhir dari segala awal, Arjuna.'],
+  },
+];
+
+// Skill point system
+export const STAT_NAMES = ['hp', 'stamina', 'energy', 'attack', 'defense', 'speed'];
+export const STAT_LABELS = { hp: 'HP', stamina: 'Stamina', energy: 'Energi', attack: 'Serangan', defense: 'Pertahanan', speed: 'Kecepatan' };
+export const STAT_PER_POINT = { hp: 15, stamina: 8, energy: 5, attack: 3, defense: 3, speed: 0.15 };
+export const SKILL_POINTS_PER_LEVEL = 2;
+
+// Buff system
+export const MAX_ACTIVE_BUFFS = 3;

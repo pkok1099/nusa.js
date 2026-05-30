@@ -2,19 +2,37 @@
 // level.js — Level generation and tile map management
 // ============================================================
 
-import { TILE, LEVEL_H } from './config.js';
+import { TILE, STAGES } from './config.js';
 
-export const levelData = [
-  {
-    name: 'Candi Borobudur',
-    subtitle: 'Bangkit dari Debu Waktu',
-    bg1: '#0D0A1A', bg2: '#1A0A2E',
-    artifact: 'Artefak Tanah',
-    width: 80, height: 20,
-  },
-];
+export const levelData = STAGES.map(s => ({
+  name: s.name,
+  subtitle: s.subtitle,
+  bg1: s.bg1, bg2: s.bg2,
+  artifact: s.artifact,
+  width: s.width, height: s.height,
+}));
 
-export function generateLevel1() {
+export function fillRect(map, sx, sy, w, h, tile) {
+  for (let y = sy; y < sy + h && y < map.length; y++)
+    for (let x = sx; x < sx + w && x < map[0].length; x++)
+      if (y >= 0 && x >= 0) map[y][x] = tile;
+}
+
+// Main level generator — dispatches by stageId
+export function generateLevel(stageId) {
+  const sid = stageId || 0;
+  switch (sid) {
+    case 0: return generateLevel0();
+    case 1: return generateLevel1();
+    case 2: return generateLevel2();
+    case 3: return generateLevel3();
+    case 4: return generateLevel4();
+    default: return generateLevel0();
+  }
+}
+
+// Stage 0: Candi Borobudur (stone, platforms, dark purple theme)
+function generateLevel0() {
   const W = 80, H = 20;
   const map = [];
   for (let y = 0; y < H; y++) {
@@ -70,8 +88,274 @@ export function generateLevel1() {
   return map;
 }
 
-export function fillRect(map, sx, sy, w, h, tile) {
-  for (let y = sy; y < sy + h && y < map.length; y++)
-    for (let x = sx; x < sx + w && x < map[0].length; x++)
-      if (y >= 0 && x >= 0) map[y][x] = tile;
+// Stage 1: Hutan Borneo (trees, vines, dark green theme)
+function generateLevel1() {
+  const W = 90, H = 22;
+  const map = [];
+  for (let y = 0; y < H; y++) {
+    map[y] = [];
+    for (let x = 0; x < W; x++) {
+      if (y >= H - 2) { map[y][x] = 1; continue; }
+      if (x === 0 || x === W - 1) { map[y][x] = 1; continue; }
+      map[y][x] = 0;
+    }
+  }
+
+  // Section 1: Forest entrance
+  fillRect(map, 0, H - 3, 18, 2, 1);
+  // Trees
+  fillRect(map, 8, H - 7, 2, 4, 5);   // tree trunk
+  fillRect(map, 6, H - 9, 6, 2, 5);   // tree canopy top
+  fillRect(map, 14, H - 6, 2, 3, 5);  // tree trunk
+  fillRect(map, 12, H - 8, 6, 2, 5);  // tree canopy top
+  // Vine platforms
+  fillRect(map, 3, H - 5, 4, 1, 6);
+  fillRect(map, 16, H - 6, 3, 1, 6);
+
+  // Section 2: Deep jungle
+  fillRect(map, 18, H - 3, 20, 2, 1);
+  fillRect(map, 20, H - 5, 3, 1, 2);
+  fillRect(map, 26, H - 7, 3, 1, 2);
+  fillRect(map, 30, H - 9, 3, 1, 6);  // vine platform
+  fillRect(map, 34, H - 6, 3, 1, 2);
+  // More trees
+  fillRect(map, 22, H - 8, 2, 5, 5);
+  fillRect(map, 32, H - 10, 2, 7, 5);
+
+  // Section 3: Swamp area (water)
+  fillRect(map, 38, H - 3, 18, 2, 1);
+  fillRect(map, 42, H - 4, 8, 1, 4);  // water on ground
+  fillRect(map, 42, H - 6, 3, 1, 2);
+  fillRect(map, 48, H - 8, 3, 1, 2);
+  fillRect(map, 52, H - 5, 3, 1, 6);
+
+  // Section 4: Puzzle area
+  fillRect(map, 56, H - 3, 18, 2, 1);
+  fillRect(map, 56, H - 3, 1, 8, 1);
+  fillRect(map, 56, H - 10, 3, 1, 1);
+  fillRect(map, 60, H - 6, 3, 1, 2);
+  fillRect(map, 64, H - 8, 3, 1, 6);
+  fillRect(map, 68, H - 5, 3, 1, 2);
+
+  // Section 5: Boss arena
+  fillRect(map, 74, H - 3, 16, 2, 1);
+  fillRect(map, 74, H - 3, 1, 10, 1);
+  fillRect(map, 89, H - 3, 1, 10, 1);
+  fillRect(map, 78, H - 7, 2, 1, 2);
+  fillRect(map, 84, H - 7, 2, 1, 2);
+
+  // Checkpoints
+  map[H - 4][18] = 9;
+  map[H - 4][40] = 9;
+  map[H - 4][56] = 9;
+
+  return map;
 }
+
+// Stage 2: Gunung Bromo (lava pools, rocks, red/orange theme)
+function generateLevel2() {
+  const W = 100, H = 24;
+  const map = [];
+  for (let y = 0; y < H; y++) {
+    map[y] = [];
+    for (let x = 0; x < W; x++) {
+      if (y >= H - 2) { map[y][x] = 1; continue; }
+      if (x === 0 || x === W - 1) { map[y][x] = 1; continue; }
+      map[y][x] = 0;
+    }
+  }
+
+  // Section 1: Mountain base
+  fillRect(map, 0, H - 3, 20, 2, 1);
+  fillRect(map, 4, H - 5, 3, 1, 2);
+  fillRect(map, 10, H - 7, 4, 1, 2);
+  fillRect(map, 16, H - 5, 3, 1, 2);
+  // Lava pool
+  fillRect(map, 6, H - 3, 4, 1, 3);  // lava at ground level
+
+  // Section 2: Lava caves
+  fillRect(map, 20, H - 3, 22, 2, 1);
+  fillRect(map, 24, H - 5, 3, 1, 2);
+  fillRect(map, 28, H - 4, 5, 1, 3);  // lava pool
+  fillRect(map, 34, H - 7, 3, 1, 2);
+  fillRect(map, 38, H - 9, 3, 1, 2);
+  fillRect(map, 36, H - 4, 3, 1, 3);  // lava pool
+  // Rock formations
+  fillRect(map, 22, H - 6, 2, 3, 1);
+  fillRect(map, 30, H - 8, 2, 5, 1);
+
+  // Section 3: Volcano ascent
+  fillRect(map, 42, H - 3, 20, 2, 1);
+  for (let i = 0; i < 6; i++) fillRect(map, 44 + i, H - 4 - i, 2, 1, 1);
+  fillRect(map, 50, H - 10, 4, 1, 2);
+  fillRect(map, 55, H - 7, 3, 1, 2);
+  fillRect(map, 48, H - 4, 5, 1, 3);  // lava
+
+  // Section 4: Puzzle area
+  fillRect(map, 62, H - 3, 18, 2, 1);
+  fillRect(map, 62, H - 3, 1, 8, 1);
+  fillRect(map, 62, H - 10, 3, 1, 1);
+  fillRect(map, 66, H - 6, 3, 1, 2);
+  fillRect(map, 70, H - 8, 3, 1, 2);
+  fillRect(map, 74, H - 5, 3, 1, 2);
+  fillRect(map, 68, H - 4, 4, 1, 3);  // lava
+
+  // Section 5: Boss arena (crater)
+  fillRect(map, 80, H - 3, 20, 2, 1);
+  fillRect(map, 80, H - 3, 1, 10, 1);
+  fillRect(map, 99, H - 3, 1, 10, 1);
+  fillRect(map, 84, H - 7, 2, 1, 2);
+  fillRect(map, 92, H - 7, 2, 1, 2);
+  fillRect(map, 86, H - 4, 8, 1, 3);  // lava floor
+
+  // Checkpoints
+  map[H - 4][20] = 9;
+  map[H - 4][42] = 9;
+  map[H - 4][62] = 9;
+
+  return map;
+}
+
+// Stage 3: Laut Bali (water, coral platforms, blue theme)
+function generateLevel3() {
+  const W = 110, H = 26;
+  const map = [];
+  for (let y = 0; y < H; y++) {
+    map[y] = [];
+    for (let x = 0; x < W; x++) {
+      if (y >= H - 2) { map[y][x] = 4; continue; } // water at bottom
+      if (x === 0 || x === W - 1) { map[y][x] = 1; continue; }
+      map[y][x] = 0;
+    }
+  }
+
+  // Section 1: Beach entry
+  fillRect(map, 0, H - 3, 20, 1, 1);  // sand
+  fillRect(map, 4, H - 5, 3, 1, 2);   // coral platform
+  fillRect(map, 10, H - 7, 4, 1, 2);
+  fillRect(map, 15, H - 5, 3, 1, 2);
+  // Coral decorations
+  fillRect(map, 6, H - 8, 2, 3, 8);   // decoration
+  fillRect(map, 12, H - 9, 2, 2, 8);
+
+  // Section 2: Shallow waters
+  fillRect(map, 20, H - 3, 22, 1, 1);
+  fillRect(map, 22, H - 4, 4, 1, 4);  // shallow water
+  fillRect(map, 28, H - 6, 3, 1, 2);
+  fillRect(map, 33, H - 8, 3, 1, 2);
+  fillRect(map, 38, H - 5, 3, 1, 2);
+  fillRect(map, 26, H - 4, 3, 1, 4);
+
+  // Section 3: Deep sea
+  fillRect(map, 42, H - 3, 22, 1, 1);
+  fillRect(map, 45, H - 5, 3, 1, 2);
+  fillRect(map, 50, H - 7, 3, 1, 2);
+  fillRect(map, 55, H - 9, 3, 1, 2);
+  fillRect(map, 58, H - 5, 4, 1, 2);
+  // Deep water areas
+  fillRect(map, 46, H - 4, 10, 1, 4);
+
+  // Section 4: Puzzle area
+  fillRect(map, 64, H - 3, 20, 1, 1);
+  fillRect(map, 64, H - 3, 1, 8, 1);
+  fillRect(map, 64, H - 10, 3, 1, 1);
+  fillRect(map, 68, H - 6, 3, 1, 2);
+  fillRect(map, 72, H - 8, 3, 1, 2);
+  fillRect(map, 76, H - 5, 3, 1, 2);
+  fillRect(map, 70, H - 4, 6, 1, 4);
+
+  // Section 5: Boss arena (ocean depths)
+  fillRect(map, 84, H - 3, 26, 1, 1);
+  fillRect(map, 84, H - 3, 1, 10, 1);
+  fillRect(map, 109, H - 3, 1, 10, 1);
+  fillRect(map, 88, H - 7, 2, 1, 2);
+  fillRect(map, 96, H - 7, 2, 1, 2);
+  fillRect(map, 102, H - 7, 2, 1, 2);
+  fillRect(map, 86, H - 4, 22, 1, 4);
+
+  // Checkpoints
+  map[H - 4][20] = 9;
+  map[H - 4][42] = 9;
+  map[H - 4][64] = 9;
+
+  return map;
+}
+
+// Stage 4: Candi Prambanan (grand temple, gold pillars, epic scale)
+function generateLevel4() {
+  const W = 120, H = 28;
+  const map = [];
+  for (let y = 0; y < H; y++) {
+    map[y] = [];
+    for (let x = 0; x < W; x++) {
+      if (y >= H - 2) { map[y][x] = 1; continue; }
+      if (x === 0 || x === W - 1) { map[y][x] = 1; continue; }
+      map[y][x] = 0;
+    }
+  }
+
+  // Section 1: Grand entrance
+  fillRect(map, 0, H - 3, 22, 2, 1);
+  // Grand pillars
+  fillRect(map, 5, H - 8, 2, 5, 1);
+  fillRect(map, 10, H - 8, 2, 5, 1);
+  fillRect(map, 15, H - 8, 2, 5, 1);
+  fillRect(map, 4, H - 9, 9, 1, 2);   // platform between pillars
+  fillRect(map, 12, H - 11, 6, 1, 2);
+
+  // Section 2: Temple corridors
+  fillRect(map, 22, H - 3, 22, 2, 1);
+  fillRect(map, 25, H - 5, 3, 1, 2);
+  fillRect(map, 30, H - 7, 3, 1, 2);
+  fillRect(map, 35, H - 9, 3, 1, 2);
+  fillRect(map, 38, H - 5, 4, 1, 2);
+  // Pillars
+  fillRect(map, 28, H - 10, 2, 7, 1);
+  fillRect(map, 33, H - 10, 2, 7, 1);
+  fillRect(map, 38, H - 10, 2, 7, 1);
+
+  // Section 3: Grand hall
+  fillRect(map, 44, H - 3, 24, 2, 1);
+  // Multiple platforms
+  fillRect(map, 46, H - 6, 3, 1, 2);
+  fillRect(map, 50, H - 8, 3, 1, 2);
+  fillRect(map, 54, H - 10, 3, 1, 2);
+  fillRect(map, 58, H - 8, 3, 1, 2);
+  fillRect(map, 62, H - 6, 3, 1, 2);
+  // Grand pillars
+  fillRect(map, 48, H - 12, 2, 9, 1);
+  fillRect(map, 55, H - 12, 2, 9, 1);
+  fillRect(map, 62, H - 12, 2, 9, 1);
+
+  // Section 4: Puzzle area
+  fillRect(map, 68, H - 3, 22, 2, 1);
+  fillRect(map, 68, H - 3, 1, 8, 1);
+  fillRect(map, 68, H - 10, 3, 1, 1);
+  fillRect(map, 72, H - 6, 3, 1, 2);
+  fillRect(map, 76, H - 8, 3, 1, 2);
+  fillRect(map, 80, H - 6, 3, 1, 2);
+  fillRect(map, 84, H - 10, 3, 1, 2);
+
+  // Section 5: Final boss arena
+  fillRect(map, 90, H - 3, 30, 2, 1);
+  fillRect(map, 90, H - 3, 1, 12, 1);
+  fillRect(map, 119, H - 3, 1, 12, 1);
+  // Grand platforms
+  fillRect(map, 95, H - 8, 3, 1, 2);
+  fillRect(map, 102, H - 10, 3, 1, 2);
+  fillRect(map, 110, H - 8, 3, 1, 2);
+  // Side pillars
+  fillRect(map, 92, H - 12, 2, 9, 1);
+  fillRect(map, 100, H - 12, 2, 9, 1);
+  fillRect(map, 108, H - 12, 2, 9, 1);
+  fillRect(map, 116, H - 12, 2, 9, 1);
+
+  // Checkpoints
+  map[H - 4][22] = 9;
+  map[H - 4][44] = 9;
+  map[H - 4][68] = 9;
+
+  return map;
+}
+
+

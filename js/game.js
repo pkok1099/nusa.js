@@ -2,25 +2,28 @@
 // game.js — Main game state machine, initialization, and loop
 // ============================================================
 
-import { GAME_W, GAME_H } from './config.js';
+import { GAME_W, GAME_H, STAGES, WEAPONS, ARMORS, ACCESSORIES, POTIONS } from './config.js';
 import { initAudio, playSound } from './audio.js';
-import { keys, savePrevKeys, setupInput } from './input.js';
+import { keys, savePrevKeys, setupInput, justPressed } from './input.js';
 import { setTileMap } from './physics.js';
 import { camera, updateCamera } from './camera.js';
 import { particles, floatingTexts, updateParticles, clearParticles } from './particles.js';
 import { initRenderer } from './renderer.js';
-import { generateLevel1 } from './level.js';
+import { generateLevel } from './level.js';
 import { spawnEntities, createBoss } from './entities.js';
 import { player, updatePlayer, damagePlayer, gainExp, resetPlayer, respawnPlayer, setStateRefs } from './player.js';
-import { updateEnemies } from './enemy.js';
+import { updateEnemies, setEnemyShakeRef } from './enemy.js';
 import { updateBoss } from './boss.js';
 import { initPuzzle, getPuzzleState, resetPuzzle } from './puzzle.js';
 import { startDialog, updateDialog } from './dialog.js';
+import { inventory, getComputedStats, equipItem, unequipSlot, usePotion, allocateStat, updateBuffs, resetInventory } from './inventory.js';
+import { resetShopState, buyItem, sellItem } from './shop.js';
 import {
   drawBackground, drawLevel, drawPlayer, drawEnemies, drawBoss,
   drawItems, drawNPCs, drawPuzzleTriggers, drawParticles, drawHUD,
   drawDialog, drawMenu, drawPuzzle, drawBossIntro, drawGameOver, drawVictory,
-  setGameTime, resetBossIntroTimer, resetGameOverTimer,
+  drawInventory, drawShop, drawStageSelect, drawLevelUp,
+  setGameTime, resetBossIntroTimer, resetGameOverTimer, setCurrentStageId, setInvTab,
 } from './draw-game.js';
 
 // ---- Shared mutable state ----
@@ -32,6 +35,7 @@ const deathCount = { value: 0 };
 
 // Wire up state refs for player module
 setStateRefs(gameState, hitStop, shake, parryFlash, deathCount);
+setEnemyShakeRef(shake);
 
 // ---- Game-level variables ----
 let gameTime = 0;
@@ -40,6 +44,11 @@ let tileMap = [];
 let boss = null;
 let bossActive = false;
 let puzzleSolved = false;
+let currentStageId = 0;
+let shopFromStage = false; // true if shop opened from stage select, false if from level
+
+// Game progress - which stages are unlocked
+let unlockedStages = [true, false, false, false, false];
 
 // ---- Canvas setup ----
 const canvas = document.getElementById('gameCanvas');
@@ -61,30 +70,54 @@ window.addEventListener('resize', resize);
 resize();
 
 // ---- Game init ----
-function startGame() {
+function startStage(stageId) {
+  currentStageId = stageId;
+  setCurrentStageId(stageId);
+  player.currentStageId = stageId;
+
   initAudio();
   gameState.value = 'playing';
-  tileMap = generateLevel1();
+  tileMap = generateLevel(stageId);
   setTileMap(tileMap);
-  entities = spawnEntities();
-  boss = createBoss(73, 18 - 6);
+  entities = spawnEntities(stageId);
+
+  const stage = STAGES[stageId];
+  const bossX = [73, 80, 90, 100, 110][stageId] || 73;
+  const bossY = stage.height - 6;
+  boss = createBoss(bossX, bossY, stageId);
   bossActive = false;
   resetPuzzle();
   puzzleSolved = false;
-  resetPlayer();
+
+  // Set player position to start of level
+  const stats = getComputedStats(player.level);
+  player.x = 80;
+  player.y = (stage.height - 3) * 32 - player.h;
+  player.prevY = player.y;
+  player.checkpoint = { x: player.x, y: player.y };
+  player.vx = 0;
+  player.vy = 0;
+  player.invincible = 60;
+
   camera.x = 0; camera.y = 0;
   clearParticles();
   hitStop.value = 0;
   parryFlash.timer = 0;
 
   // Intro dialog
-  doStartDialog('Candra Kirana', [
-    'Arjuna... kamu telah memilih untuk memulai perjalanan ini.',
-    'Candi Borobudur adalah tempat pertamamu.',
-    'Artefak Tanah tersembunyi di dalam candi ini, dijaga oleh Penjaga Batu.',
-    'Gunakan kerisku untuk melawan, dan cari jalan melalui puzzle kuno.',
-    'Semoga leluhur membimbingmu, Anak Jawa.',
-  ]);
+  const speaker = stageId === 0 ? 'Candra Kirana' :
+    stageId === 1 ? 'Penjaga Hutan' :
+    stageId === 2 ? ' Pendeta Api' :
+    stageId === 3 ? 'Nyi Roro Kidul' : 'Resi Wisrawa';
+  doStartDialog(speaker, stage.introDialog);
+}
+
+function startGame() {
+  resetPlayer();
+  resetInventory();
+  unlockedStages = [true, false, false, false, false];
+  deathCount.value = 0;
+  gameState.value = 'stageSelect';
 }
 
 function doStartDialog(speaker, lines) {
@@ -93,7 +126,7 @@ function doStartDialog(speaker, lines) {
 }
 
 function initPuzzleInternal() {
-  initPuzzle();
+  initPuzzle(currentStageId);
   gameState.value = 'puzzle';
 }
 
@@ -127,6 +160,22 @@ function gameLoop() {
       break;
     }
 
+    case 'stageSelect': {
+      const result = drawStageSelect(unlockedStages);
+      if (result) {
+        if (result.action === 'select') {
+          startStage(result.stageId);
+        } else if (result.action === 'shop') {
+          gameState.value = 'shop';
+          shopFromStage = true;
+          resetShopState();
+        } else if (result.action === 'menu') {
+          gameState.value = 'menu';
+        }
+      }
+      break;
+    }
+
     case 'playing': {
       const triggerBoss = updatePlayer(keys, entities, boss, bossActive, getPuzzleState(), tileMap, doStartDialog, initPuzzleInternal);
       if (triggerBoss === 'triggerBoss') {
@@ -152,6 +201,17 @@ function gameLoop() {
 
       const ps = getPuzzleState();
       if (ps && ps.solved) puzzleSolved = true;
+
+      // Toggle inventory with TAB or I
+      if (justPressed('Tab') || justPressed('KeyI')) {
+        gameState.value = 'inventory';
+        setInvTab(0);
+      }
+
+      // Level up screen when skill points available
+      if (inventory.skillPoints > 0 && justPressed('KeyL')) {
+        gameState.value = 'levelUp';
+      }
       break;
     }
 
@@ -202,8 +262,10 @@ function gameLoop() {
       const goResult = drawGameOver(deathCount.value);
       if (goResult === 'respawn') {
         respawnPlayer();
-        entities = spawnEntities();
-        boss = createBoss(73, 18 - 6);
+        entities = spawnEntities(currentStageId);
+        const bossX = [73, 80, 90, 100, 110][currentStageId] || 73;
+        const stage = STAGES[currentStageId];
+        boss = createBoss(bossX, stage.height - 6, currentStageId);
         bossActive = false;
         resetGameOverTimer();
       }
@@ -214,6 +276,110 @@ function gameLoop() {
     case 'victory': {
       const vicResult = drawVictory(deathCount.value);
       if (vicResult === 'menu') gameState.value = 'menu';
+      else if (vicResult === 'stageSelect') {
+        // Unlock next stage
+        if (currentStageId < 4) {
+          unlockedStages[currentStageId + 1] = true;
+        }
+        gameState.value = 'stageSelect';
+      }
+      break;
+    }
+
+    case 'inventory': {
+      // Draw game world paused
+      drawBackground();
+      drawLevel(tileMap);
+      drawItems(entities);
+      drawPuzzleTriggers(entities);
+      drawNPCs(entities);
+      drawEnemies(entities);
+      drawBoss(boss, bossActive);
+      drawPlayer(parryFlash.timer);
+      drawParticles(particles, floatingTexts);
+      drawHUD(boss, bossActive, deathCount.value);
+
+      // Draw inventory overlay
+      const invResult = drawInventory();
+      if (invResult) {
+        if (invResult.action === 'close') {
+          gameState.value = 'playing';
+        } else if (invResult.action === 'equip') {
+          equipItem(invResult.index);
+        } else if (invResult.action === 'unequip') {
+          unequipSlot(invResult.slot);
+        } else if (invResult.action === 'use') {
+          const effect = usePotion(invResult.index);
+          if (effect) {
+            if (effect.type === 'health') {
+              const stats = getComputedStats(player.level);
+              player.healing = true;
+              player.healingTimer = 0;
+              player.healTicksRemaining = 20;
+              player.healPerTick = effect.value / 20;
+            } else if (effect.type === 'stamina') {
+              const stats = getComputedStats(player.level);
+              player.stamina = Math.min(stats.maxStamina, player.stamina + effect.value);
+            }
+            // Buff potions are handled inside usePotion
+          }
+        } else if (invResult.action === 'allocate') {
+          allocateStat(invResult.stat);
+          // Update player max stats after allocation
+          const stats = getComputedStats(player.level);
+          if (invResult.stat === 'hp') player.hp = Math.min(player.hp + 15, stats.maxHp);
+          if (invResult.stat === 'stamina') player.stamina = Math.min(player.stamina + 8, stats.maxStamina);
+          if (invResult.stat === 'energy') player.energy = Math.min(player.energy + 5, stats.maxEnergy);
+        }
+      }
+      break;
+    }
+
+    case 'shop': {
+      // Draw shop overlay
+      const shopResult = drawShop();
+      if (shopResult) {
+        if (shopResult.action === 'close') {
+          gameState.value = shopFromStage ? 'stageSelect' : 'playing';
+          shopFromStage = false;
+          resetShopState();
+        } else if (shopResult.action === 'buy') {
+          // Find item price
+          let price = 0;
+          if (shopResult.category === 'weapon' && WEAPONS[shopResult.itemId]) price = WEAPONS[shopResult.itemId].price;
+          else if (shopResult.category === 'armor' && ARMORS[shopResult.itemId]) price = ARMORS[shopResult.itemId].price;
+          else if (shopResult.category === 'accessory' && ACCESSORIES[shopResult.itemId]) price = ACCESSORIES[shopResult.itemId].price;
+          else if (shopResult.category === 'potion' && POTIONS[shopResult.itemId]) price = POTIONS[shopResult.itemId].price;
+          const success = buyItem(shopResult.category, shopResult.itemId, player.rupiah);
+          if (success) player.rupiah -= price;
+        } else if (shopResult.action === 'sell') {
+          const sellPrice = sellItem(shopResult.index);
+          if (sellPrice > 0) player.rupiah += sellPrice;
+        }
+      }
+      break;
+    }
+
+    case 'levelUp': {
+      // Draw game world paused
+      drawBackground();
+      drawLevel(tileMap);
+      drawPlayer(parryFlash.timer);
+      drawHUD(boss, bossActive, deathCount.value);
+
+      // Draw level up overlay
+      const luResult = drawLevelUp();
+      if (luResult) {
+        if (luResult.action === 'close') {
+          gameState.value = 'playing';
+        } else if (luResult.action === 'allocate') {
+          allocateStat(luResult.stat);
+          const stats = getComputedStats(player.level);
+          if (luResult.stat === 'hp') player.hp = Math.min(player.hp + 15, stats.maxHp);
+          if (luResult.stat === 'stamina') player.stamina = Math.min(player.stamina + 8, stats.maxStamina);
+          if (luResult.stat === 'energy') player.energy = Math.min(player.energy + 5, stats.maxEnergy);
+        }
+      }
       break;
     }
   }
