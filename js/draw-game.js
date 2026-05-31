@@ -2094,7 +2094,7 @@ export function drawLevelUp() {
 // ---- PAUSE MENU (in-game, triggered by ESC) ----
 let pauseSelection = 0;
 let pauseShowControls = false;
-const pauseItems = ['Lanjutkan', 'Kontrol', 'Menu Utama'];
+const pauseItems = ['Lanjutkan', 'Respawn', 'Kontrol', 'Menu Utama'];
 
 export function drawPauseMenu() {
   const ctx = getCtx();
@@ -2103,7 +2103,7 @@ export function drawPauseMenu() {
   drawRect(0, 0, GAME_W, GAME_H, '#000000AA');
 
   // Panel
-  const panelW = 360, panelH = 400;
+  const panelW = 360, panelH = 440;
   const panelX = GAME_W / 2 - panelW / 2, panelY = GAME_H / 2 - panelH / 2;
   drawRect(panelX, panelY, panelW, panelH, '#0A0A0AF0', 10);
   drawOutline(panelX, panelY, panelW, panelH, C.gold + '50', 2, 10);
@@ -2145,12 +2145,14 @@ export function drawPauseMenu() {
       const itemX = GAME_W / 2 - itemW / 2;
 
       if (isSelected) {
-        drawRect(itemX, y, itemW, itemH, C.gold + '18', 6);
-        drawOutline(itemX, y, itemW, itemH, C.gold + '60', 2, 6);
-        drawText('◆', itemX - 18, y + itemH / 2, 12, C.gold, 'center');
-        drawText(item, GAME_W / 2, y + itemH / 2, 16, C.gold, 'center');
+        const itemColor = item === 'Respawn' ? C.red : C.gold;
+        const outlineColor = item === 'Respawn' ? C.red + '60' : C.gold + '60';
+        drawRect(itemX, y, itemW, itemH, (item === 'Respawn' ? C.red : C.gold) + '18', 6);
+        drawOutline(itemX, y, itemW, itemH, outlineColor, 2, 6);
+        drawText('◆', itemX - 18, y + itemH / 2, 12, itemColor, 'center');
+        drawText(item, GAME_W / 2, y + itemH / 2, 16, itemColor, 'center');
       } else {
-        drawText(item, GAME_W / 2, y + itemH / 2, 14, C.textDim, 'center');
+        drawText(item, GAME_W / 2, y + itemH / 2, 14, item === 'Respawn' ? C.red + '80' : C.textDim, 'center');
       }
     });
 
@@ -2177,6 +2179,9 @@ export function drawPauseMenu() {
     if (selected === 'Lanjutkan') {
       pauseSelection = 0;
       return { action: 'resume' };
+    } else if (selected === 'Respawn') {
+      pauseSelection = 0;
+      return { action: 'respawn' };
     } else if (selected === 'Kontrol') {
       pauseShowControls = true;
     } else if (selected === 'Menu Utama') {

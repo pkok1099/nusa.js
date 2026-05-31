@@ -458,6 +458,15 @@ function gameLoop() {
       if (pauseResult) {
         if (pauseResult.action === 'resume') {
           gameState.value = 'playing';
+        } else if (pauseResult.action === 'respawn') {
+          // Souls-like: Give Up / Respawn — teleport back to last bonfire
+          autoSave();
+          respawnPlayer();
+          const loaded = loadMap(currentMapId);
+          entities = loaded.entities;
+          boss = loaded.boss;
+          bossActive = false;
+          gameState.value = 'playing';
         } else if (pauseResult.action === 'mainMenu') {
           // Auto-save before returning to menu
           autoSave();
