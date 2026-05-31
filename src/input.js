@@ -9,6 +9,12 @@ export const mouse = { x: 0, y: 0, clicked: false };
 import { initAudio } from './audio.js';
 import { GAME_W, GAME_H } from './config.js';
 
+function updateMouseFromPointer(canvas, e) {
+  const r = canvas.getBoundingClientRect();
+  mouse.x = (e.clientX - r.left) * (GAME_W / r.width);
+  mouse.y = (e.clientY - r.top) * (GAME_H / r.height);
+}
+
 export function justPressed(code) {
   return keys[code] && !prevKeys[code];
 }
@@ -41,12 +47,11 @@ export function setupInput(canvas) {
   // Phase 5: Use window instead of canvas to avoid overlay blocking
   // Use pointer events for better compatibility
   window.addEventListener('pointermove', e => {
-    const r = canvas.getBoundingClientRect();
-    mouse.x = (e.clientX - r.left) * (GAME_W / r.width);
-    mouse.y = (e.clientY - r.top) * (GAME_H / r.height);
+    updateMouseFromPointer(canvas, e);
   });
 
   window.addEventListener('pointerdown', e => {
+    updateMouseFromPointer(canvas, e);
     mouse.clicked = true;
     console.log(`[INPUT] PointerDown at screen(${e.clientX}, ${e.clientY}) -> game(${Math.round(mouse.x)}, ${Math.round(mouse.y)})`);
     initAudio();

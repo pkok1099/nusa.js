@@ -31,6 +31,15 @@ let currentStageId = 0;
 export function setGameTime(t) { gameTime = t; }
 export function setCurrentStageId(id) { currentStageId = id; }
 
+const uiDebug = {
+  mapSelectHover: 'none',
+  mapSelectLastClick: 'none',
+};
+
+export function getUIDebug() {
+  return uiDebug;
+}
+
 // Save indicator state
 let saveIndicatorTimer = 0;
 export function showSaveIndicator() { saveIndicatorTimer = 180; }
@@ -352,19 +361,21 @@ export function drawHUD(boss, bossActive, deathCount) {
 
 // ============================================================
 // FULL-SCREEN OVERLAYS (Menu, GameOver, etc.)
-// These render via the 2D canvas on the fullscreen overlay div
-// For Phase 1, we use a simpler approach: render to an offscreen
-// canvas and display as background-image
+// These render via a real 2D canvas inside the fullscreen overlay.
 // ============================================================
 
 let overlayCanvas = null;
 let overlayCtx = null;
+let overlayAttached = false;
 
 function getOverlayCanvas() {
   if (!overlayCanvas) {
     overlayCanvas = document.createElement('canvas');
     overlayCanvas.width = GAME_W;
     overlayCanvas.height = GAME_H;
+    overlayCanvas.style.display = 'block';
+    overlayCanvas.style.imageRendering = 'pixelated';
+    overlayCanvas.style.pointerEvents = 'none';
     overlayCtx = overlayCanvas.getContext('2d');
   }
   return { canvas: overlayCanvas, ctx: overlayCtx };
@@ -377,21 +388,22 @@ function showOverlay() {
   el.style.justifyContent = 'center';
   el.style.flexDirection = 'column';
   el.style.background = '#000';
+  if (overlayCanvas && !overlayAttached) {
+    el.replaceChildren(overlayCanvas);
+    overlayAttached = true;
+  }
   return el;
 }
 
-function hideOverlay() {
+export function hideOverlay() {
   const el = document.getElementById('fullscreen-overlay');
   el.style.display = 'none';
-  el.innerHTML = '';
+  overlayAttached = false;
+  el.replaceChildren();
 }
 
 function renderOverlayToScreen() {
-  const el = document.getElementById('fullscreen-overlay');
-  el.style.backgroundImage = `url(${overlayCanvas.toDataURL()})`;
-  el.style.backgroundSize = 'contain';
-  el.style.backgroundPosition = 'center';
-  el.style.backgroundRepeat = 'no-repeat';
+  showOverlay();
 }
 
 export function drawMenu() {
@@ -465,21 +477,25 @@ export function drawMapSelect(unlockedMaps, clearedMaps) {
     { x: 160, y: 180 }, { x: 380, y: 150 }, { x: 600, y: 160 },
     { x: 250, y: 340 }, { x: 520, y: 330 },
   ];
+  const stageRect = { w: 140, h: 90 };
+  let hoveredStage = -1;
 
   STAGES.forEach((stage, i) => {
     const pos = stagePositions[i];
     const unlocked = unlockedMaps[i];
     const cleared = clearedMaps[i];
-    const hovering = mouse.x >= pos.x - 50 && mouse.x <= pos.x + 50 &&
-                     mouse.y >= pos.y - 30 && mouse.y <= pos.y + 30;
+    const left = pos.x - stageRect.w / 2;
+    const top = pos.y - stageRect.h / 2;
+    const hovering = mouse.x >= left && mouse.x <= left + stageRect.w &&
+                     mouse.y >= top && mouse.y <= top + stageRect.h;
 
     // Stage block
     c.fillStyle = cleared ? C.gold + '30' : unlocked ? C.gold + '20' : '#1A1A1A';
-    c.fillRect(pos.x - 50, pos.y - 30, 100, 60);
+    c.fillRect(left, top, stageRect.w, stageRect.h);
 
     c.strokeStyle = hovering && unlocked ? C.goldLight : unlocked ? C.gold + '60' : '#333';
     c.lineWidth = hovering ? 2 : 1;
-    c.strokeRect(pos.x - 50, pos.y - 30, 100, 60);
+    c.strokeRect(left, top, stageRect.w, stageRect.h);
 
     c.fillStyle = unlocked ? C.goldLight : C.textDim;
     c.font = '12px sans-serif';
@@ -494,7 +510,22 @@ export function drawMapSelect(unlockedMaps, clearedMaps) {
       c.font = '10px sans-serif';
       c.fillText('Terkunci', pos.x, pos.y + 18);
     }
+
+    if (hovering) hoveredStage = i;
   });
+
+  uiDebug.mapSelectHover = hoveredStage >= 0
+    ? `${hoveredStage}:${STAGES[hoveredStage].name}:${unlockedMaps[hoveredStage] ? 'unlocked' : 'locked'}`
+    : 'none';
+
+  if (new URLSearchParams(window.location.search).get('debug') === '1' ||
+      localStorage.getItem('nusa_debug') === '1') {
+    c.fillStyle = '#7CFF8A';
+    c.font = '10px monospace';
+    c.textAlign = 'left';
+    c.fillText(`hover=${uiDebug.mapSelectHover}`, 16, 88);
+    c.fillText(`last=${uiDebug.mapSelectLastClick}`, 16, 102);
+  }
 
   // Shop button
   c.fillStyle = C.gold + '20';
@@ -507,10 +538,18 @@ export function drawMapSelect(unlockedMaps, clearedMaps) {
 
   // Check click on stage
   if (mouse.clicked) {
+    let clickedAnyStage = false;
     for (let i = 0; i < 5; i++) {
       const pos = stagePositions[i];
-      if (unlockedMaps[i] && mouse.x >= pos.x - 50 && mouse.x <= pos.x + 50 &&
-          mouse.y >= pos.y - 30 && mouse.y <= pos.y + 30) {
+      const left = pos.x - stageRect.w / 2;
+      const top = pos.y - stageRect.h / 2;
+      const hit = mouse.x >= left && mouse.x <= left + stageRect.w &&
+          mouse.y >= top && mouse.y <= top + stageRect.h;
+      if (hit) {
+        clickedAnyStage = true;
+        uiDebug.mapSelectLastClick = `${i}:${STAGES[i].name}:${unlockedMaps[i] ? 'unlocked' : 'locked'} @ ${Math.round(mouse.x)},${Math.round(mouse.y)}`;
+      }
+      if (unlockedMaps[i] && hit) {
         console.log(`[UI] Stage ${i} (${STAGES[i].name}) selected via click`);
         hideOverlay();
         return { action: 'select', mapId: i };
@@ -520,8 +559,13 @@ export function drawMapSelect(unlockedMaps, clearedMaps) {
     if (mouse.x >= GAME_W / 2 - 60 && mouse.x <= GAME_W / 2 + 60 &&
         mouse.y >= 440 && mouse.y <= 470) {
       console.log(`[UI] Shop selected via click`);
+      uiDebug.mapSelectLastClick = `shop @ ${Math.round(mouse.x)},${Math.round(mouse.y)}`;
       hideOverlay();
       return { action: 'shop' };
+    }
+
+    if (!clickedAnyStage) {
+      uiDebug.mapSelectLastClick = `miss @ ${Math.round(mouse.x)},${Math.round(mouse.y)}`;
     }
   }
 

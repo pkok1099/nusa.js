@@ -22,6 +22,7 @@ export default defineConfig({
   server: {
     port: 3000,
     open: true,
+    allowedHosts: true,
     // Required headers for WASM
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',

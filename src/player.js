@@ -43,6 +43,7 @@ import { spawnParticle, spawnFloatingText, particles } from './particles.js';
 import { inventory, getComputedStats, useHealthPotion, updateBuffs, countHealthPotions, addItem } from './inventory.js';
 import { WEAPONS, ARMORS, ACCESSORIES, POTIONS } from './config.js';
 import { getEquipmentDropRate, getRandomEquipmentDropForStage, getBossDrop } from './entities.js';
+import { invalidateTile3DCache } from './renderer.js';
 
 // Helper to get raw weapon id string (no object creation)
 function getEquippedWeaponRaw() {
@@ -840,6 +841,7 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
     if (tileMap[cpty][cptx] === 9) {
       player.checkpoint = { x: player.x, y: player.y };
       tileMap[cpty][cptx] = 0;
+      invalidateTile3DCache();
       // Souls-like v0.7.0: Bonfire checkpoint — refill estus and fully heal
       // Souls-like v0.7.1: Cure hollowing at bonfire
       player.hollowing = 0;
