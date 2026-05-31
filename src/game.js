@@ -49,7 +49,19 @@ import { initPostProcessing, applyStagePostProcessing, updatePostProcessing, ren
 import { setUsePostProcessing } from './renderer.js';
 
 // ---- Shared mutable state ----
-const gameState = { value: 'menu' };
+const _gameStateInternal = { value: 'menu' };
+const gameState = new Proxy(_gameStateInternal, {
+  set(target, prop, value) {
+    if (prop === 'value' && target[prop] !== value) {
+      console.log(`[GAME STATE] Transition: ${target[prop]} -> ${value}`);
+    }
+    target[prop] = value;
+    return true;
+  },
+  get(target, prop) {
+    return target[prop];
+  }
+});
 const hitStop = { value: 0 };
 const shake = { timer: 0, intensity: 0 };
 const parryFlash = { timer: 0 };
@@ -117,6 +129,7 @@ const hudEl = document.getElementById('hud');
 
 // ---- Map start function ----
 function startMap(mapId) {
+  console.log(`[MAP] Starting load for map ID: ${mapId}`);
   const mapData = getMapData(mapId);
 
   const loaded = loadMap(mapId);
@@ -132,6 +145,7 @@ function startMap(mapId) {
   const stats = getComputedStats(player.level);
   player.currentStageId = mapId;
   setCurrentStageId(mapId);
+  console.log(`[MAP] Map ${mapId} loaded. Player pos: (${player.x}, ${player.y})`);
   player.x = mapData.playerStartX * 32;
   player.y = mapData.playerStartY * 32 - player.h;
   player.prevY = player.y;
