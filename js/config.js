@@ -4,7 +4,7 @@
 
 // ⚠️ SINGLE SOURCE OF TRUTH for version — update ONLY here
 // package.json version should match this value
-export const VERSION = '0.8.2';
+export const VERSION = '0.8.3';
 
 // Core game dimensions
 export const GAME_W = 960;

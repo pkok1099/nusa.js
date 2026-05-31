@@ -64,7 +64,8 @@ let tileMap = [];
 let boss = null;
 let bossActive = false;
 let puzzleSolved = false;
-let shopFromStage = false; // true if shop opened from map select, false if from level
+// Travel state: used when player fast-travels from pause menu
+let travelTargetMap = -1;
 
 // Map system variables
 let loadingTargetMap = 0;
@@ -152,7 +153,10 @@ function startGame() {
   deathCount.value = 0;
   // Delete old save when starting new game
   deleteSaveGame();
-  gameState.value = 'mapSelect';
+  // Souls-like: start directly in the first map (no stage select)
+  loadingTargetMap = 0;
+  loadingTimer = 0;
+  gameState.value = 'loading';
 }
 
 function continueGame() {
@@ -205,8 +209,11 @@ function continueGame() {
     deathCount.value = data.deathCount;
   }
 
-  // Go to map select
-  gameState.value = 'mapSelect';
+  // Souls-like: continue directly into the last map the player was on
+  const targetMap = player.currentStageId || 0;
+  loadingTargetMap = targetMap;
+  loadingTimer = 0;
+  gameState.value = 'loading';
 }
 
 // Helper to auto-save
@@ -269,19 +276,16 @@ function gameLoop() {
       break;
     }
 
-    case 'mapSelect': {
+    case 'travel': {
+      // Fast travel menu (replaces mapSelect, accessible from pause menu)
       const result = drawMapSelect(unlockedMaps, clearedMaps);
       if (result) {
         if (result.action === 'select') {
-          loadingTargetMap = result.mapId;
+          travelTargetMap = result.mapId;
           loadingTimer = 0;
           gameState.value = 'loading';
-        } else if (result.action === 'shop') {
-          gameState.value = 'shop';
-          shopFromStage = true;
-          resetShopState();
         } else if (result.action === 'menu') {
-          gameState.value = 'menu';
+          gameState.value = 'paused';
         }
       }
       break;
@@ -291,7 +295,10 @@ function gameLoop() {
       loadingTimer++;
       drawLoadingScreen(loadingTimer);
       if (loadingTimer >= MAP_LOAD_DURATION) {
-        startMap(loadingTargetMap);
+        // Use travelTargetMap if set (from fast travel), otherwise use loadingTargetMap
+        const targetMap = travelTargetMap >= 0 ? travelTargetMap : loadingTargetMap;
+        travelTargetMap = -1;
+        startMap(targetMap);
       }
       break;
     }
@@ -443,6 +450,9 @@ function gameLoop() {
           // Auto-save before returning to menu
           autoSave();
           gameState.value = 'menu';
+        } else if (pauseResult.action === 'travel') {
+          // Open fast travel map selection
+          gameState.value = 'travel';
         }
       }
       break;
@@ -606,8 +616,7 @@ function gameLoop() {
       const shopResult = drawShop();
       if (shopResult) {
         if (shopResult.action === 'close') {
-          gameState.value = shopFromStage ? 'mapSelect' : 'playing';
-          shopFromStage = false;
+          gameState.value = 'playing';
           resetShopState();
         } else if (shopResult.action === 'buy') {
           // Find item price

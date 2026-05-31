@@ -127,6 +127,8 @@ export const player = {
   weaponArtTimer: 0,
   weaponArtCooldown: 0,
   weaponArtType: null,
+  // v0.8.3: Fall timer for pit detection (Souls-like: fall too long = respawn)
+  fallTimer: 0,
 };
 
 // Shared mutable state references (set from game.js)
@@ -876,11 +878,27 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
     }
   }
 
-  // Fall reset — if player falls below the map, respawn at last checkpoint
-  // (or map start if no checkpoint was reached)
-  if (tileMap && player.y > tileMap.length * 32 + 100) {
-    // Instead of dying from falling, just teleport back to safety
-    // This prevents softlocks where player falls into unreachable pits
+  // Fall reset — Souls-like: if player falls off the map or into an unreachable pit,
+  // respawn at last checkpoint with a HP penalty.
+  // v0.8.3: Added fall timer for pits within the map boundary.
+  const mapBottom = tileMap ? tileMap.length * 32 : 9999;
+  const isFalling = !player.grounded && player.vy > 0 && !player.inWater;
+  
+  if (isFalling) {
+    player.fallTimer++;
+  } else {
+    player.fallTimer = 0;
+  }
+  
+  // Respawn conditions:
+  // 1. Player fell below the map boundary
+  // 2. Player has been falling for too long (stuck in a pit within map bounds)
+  // 3 seconds (180 frames) of continuous falling = unreachable pit
+  const fellBelowMap = player.y > mapBottom + 64;
+  const stuckInPit = player.fallTimer > 180;
+  
+  if (tileMap && (fellBelowMap || stuckInPit)) {
+    // Respawn at last checkpoint/bonfire (Souls-like style)
     player.x = player.checkpoint.x;
     player.y = player.checkpoint.y;
     player.prevY = player.y;
@@ -889,6 +907,7 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
     player.grounded = false;
     player.coyoteTimer = 0;
     player.invincible = 60;
+    player.fallTimer = 0;
     // Small HP penalty for falling (souls-like style)
     const fallDmg = Math.floor(getStats().maxHp * 0.1);
     if (fallDmg > 0 && player.hp > fallDmg) {
@@ -995,13 +1014,14 @@ function applyGravityAndCollision(tileMap) {
   }
 
   // ---- STEP 2: Apply vertical movement, then resolve vertical collisions ----
-  // BUG FIX v0.8.2: Increased horizontal inset from 2→4 to prevent
-  // the player from catching on wall edges when jumping up near walls.
-  // This was causing "gravity error" where vy would get zeroed by
-  // wall tiles being detected as vertical collisions.
+  // v0.8.3: Dynamic V_INSET — larger when jumping UP (prevents wall-edge catching),
+  // smaller when falling DOWN (allows landing on wall/platform edges).
+  // This fixes the "gravity error" where vy gets incorrectly zeroed by
+  // wall tiles during vertical collision when the player should be landing
+  // on top of a wall/platform.
   player.y += player.vy;
   player.grounded = false;
-  const V_INSET = 4;
+  const V_INSET = player.vy < 0 ? 6 : 2;
   const colsY = tileCollision(player.x + V_INSET, player.y, player.w - V_INSET * 2, player.h, player.prevY);
   // Sort vertical collisions: resolve floor (bottom) first, then ceiling
   // This prevents ceiling tiles from overriding floor grounding

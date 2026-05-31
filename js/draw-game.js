@@ -1542,7 +1542,7 @@ export function drawMenu() {
     drawText('[ESC] Kembali', GAME_W / 2, GAME_H - 110, 12, C.textDim, 'center');
   }
 
-  drawText(`v${VERSION} — Map System Redesign`, GAME_W / 2, GAME_H - 30, 9, C.textDim, 'center');
+  drawText(`v${VERSION} — Open World`, GAME_W / 2, GAME_H - 30, 9, C.textDim, 'center');
 
   if (justPressed('ArrowUp') || justPressed('KeyW')) menuSelection = (menuSelection - 1 + menuItems.length) % menuItems.length;
   if (justPressed('ArrowDown') || justPressed('KeyS')) menuSelection = (menuSelection + 1) % menuItems.length;
@@ -2098,7 +2098,7 @@ export function drawLevelUp() {
 // ---- PAUSE MENU (in-game, triggered by ESC) ----
 let pauseSelection = 0;
 let pauseShowControls = false;
-const pauseItems = ['Lanjutkan', 'Kontrol', 'Menu Utama'];
+const pauseItems = ['Lanjutkan', 'Perjalanan Cepat', 'Kontrol', 'Menu Utama'];
 
 export function drawPauseMenu() {
   const ctx = getCtx();
@@ -2107,7 +2107,7 @@ export function drawPauseMenu() {
   drawRect(0, 0, GAME_W, GAME_H, '#000000AA');
 
   // Panel
-  const panelW = 360, panelH = 340;
+  const panelW = 360, panelH = 400;
   const panelX = GAME_W / 2 - panelW / 2, panelY = GAME_H / 2 - panelH / 2;
   drawRect(panelX, panelY, panelW, panelH, '#0A0A0AF0', 10);
   drawOutline(panelX, panelY, panelW, panelH, C.gold + '50', 2, 10);
@@ -2181,6 +2181,9 @@ export function drawPauseMenu() {
     if (selected === 'Lanjutkan') {
       pauseSelection = 0;
       return { action: 'resume' };
+    } else if (selected === 'Perjalanan Cepat') {
+      pauseSelection = 0;
+      return { action: 'travel' };
     } else if (selected === 'Kontrol') {
       pauseShowControls = true;
     } else if (selected === 'Menu Utama') {
@@ -2206,16 +2209,12 @@ export function drawMapSelect(unlockedMaps, clearedMaps) {
     ctx.fillStyle = C.gold + '30'; ctx.fillRect(x, y, 2, 2);
   }
 
-  drawText('PILIH PETA', GAME_W / 2, 40, 28, C.gold, 'center');
+  drawText('PERJALANAN CEPAT', GAME_W / 2, 40, 24, C.gold, 'center');
   drawText(`Rupiah: ${player.rupiah}  |  Level: ${player.level}  |  Artefak: ${player.artifacts}/5`, GAME_W / 2, 70, 12, C.goldLight + '80', 'center');
 
-  // Shop button
-  drawRect(GAME_W - 150, 20, 120, 35, C.gold + '20', 6);
-  drawOutline(GAME_W - 150, 20, 120, 35, C.gold + '60', 1, 6);
-  drawText('Toko', GAME_W - 90, 37, 14, C.gold, 'center');
-  if (mouse.clicked && mouse.x >= GAME_W - 150 && mouse.x <= GAME_W - 30 && mouse.y >= 20 && mouse.y <= 55) {
-    return { action: 'shop' };
-  }
+  // Current map indicator
+  const currentMapData = MAP_REGISTRY[currentStageId] || MAP_REGISTRY[0];
+  drawText(`Peta saat ini: ${currentMapData.name}`, GAME_W / 2, 88, 10, C.goldLight + '60', 'center');
 
   // Map cards
   let mapResult = null;
@@ -2256,7 +2255,7 @@ export function drawMapSelect(unlockedMaps, clearedMaps) {
   // Back button
   drawRect(GAME_W / 2 - 60, GAME_H - 45, 120, 30, C.gold + '15', 6);
   drawOutline(GAME_W / 2 - 60, GAME_H - 45, 120, 30, C.gold + '30', 1, 6);
-  drawText('[ESC] Menu', GAME_W / 2, GAME_H - 30, 11, C.gold, 'center');
+  drawText('[ESC] Kembali', GAME_W / 2, GAME_H - 30, 11, C.gold, 'center');
 
   if (justPressed('Escape')) {
     return { action: 'menu' };
