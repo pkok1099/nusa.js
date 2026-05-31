@@ -8,9 +8,10 @@
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Segoe UI',sans-serif;user-select:none}
 
-/* Three.js canvas container — full screen behind HUD */
-#gameContainer{width:100%;height:100%;position:relative}
-#gameContainer canvas{display:block;width:100%!important;height:100%!important}
+/* Three.js canvas container — centered 16:9 viewport */
+#gameContainer{width:100%;height:100%;position:relative;background:#000;overflow:hidden}
+#gameCanvas,#fullscreen-overlay canvas{display:block;width:min(100vw,177.7778vh)!important;height:min(100vh,56.25vw)!important}
+#gameCanvas{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
 
 /* ---- HUD OVERLAY (HTML + CSS, per migration spec) ---- */
 #hud{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10}
@@ -70,7 +71,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Se
 #interaction-label{position:absolute;bottom:100px;left:50%;transform:translateX(-50%);color:#F5E6A3;font-size:12px;display:none;text-shadow:0 0 4px #000}
 
 /* Fullscreen overlays (menu, game over, etc.) */
-#fullscreen-overlay{position:absolute;top:0;left:0;width:100%;height:100%;display:none;z-index:20;pointer-events:auto}
+#fullscreen-overlay{position:absolute;top:0;left:0;width:100%;height:100%;display:none;z-index:20;pointer-events:auto;align-items:center;justify-content:center}
 
 /* Save indicator */
 #save-indicator{position:absolute;top:12px;left:50%;transform:translateX(-50%);color:#44FF44;font-size:11px;display:none;opacity:0;transition:opacity 0.3s}

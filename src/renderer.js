@@ -207,7 +207,8 @@ export function drawRect(key, x, y, w, h, color, radius = 0) {
   let mesh = meshPool.get(key);
 
   const pos = gameToThree(x, y, w, h);
-  const threeColor = new THREE.Color(color);
+  const parsedColor = parseColor(color);
+  const threeColor = parsedColor.color;
 
   if (!mesh) {
     const geo = new THREE.PlaneGeometry(w, h);
@@ -215,6 +216,7 @@ export function drawRect(key, x, y, w, h, color, radius = 0) {
       color: threeColor,
       depthWrite: false,
       transparent: true,
+      opacity: parsedColor.opacity,
     });
     mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = 0;
@@ -224,6 +226,7 @@ export function drawRect(key, x, y, w, h, color, radius = 0) {
 
   mesh.position.set(pos.x, pos.y, 0);
   mesh.material.color.copy(threeColor);
+  mesh.material.opacity = parsedColor.opacity;
   mesh.visible = true;
 
   return mesh;
@@ -237,29 +240,32 @@ export function drawBar(key, x, y, w, h, pct, bgColor, fillColor, radius = 4) {
   const pos = gameToThree(x, y, w, h);
 
   // Background
+  const parsedBg = parseColor(bgColor);
   let bgMesh = meshPool.get(key + '_bg');
   if (!bgMesh) {
     bgMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(w, h),
-      new THREE.MeshBasicMaterial({ color: new THREE.Color(bgColor), depthWrite: false, transparent: true })
+      new THREE.MeshBasicMaterial({ color: parsedBg.color, depthWrite: false, transparent: true, opacity: parsedBg.opacity })
     );
     bgMesh.renderOrder = 0;
     scene.add(bgMesh);
     meshPool.set(key + '_bg', bgMesh);
   }
   bgMesh.position.set(pos.x, pos.y, 0.1);
-  bgMesh.material.color.set(bgColor);
+  bgMesh.material.color.copy(parsedBg.color);
+  bgMesh.material.opacity = parsedBg.opacity;
 
   // Fill
   const fillW = Math.max(1, w * pct);
   const fillX = x;
   const fillPos = gameToThree(fillX, y, fillW, h);
+  const parsedFill = parseColor(fillColor);
 
   let fillMesh = meshPool.get(key + '_fill');
   if (!fillMesh) {
     fillMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(fillW, h),
-      new THREE.MeshBasicMaterial({ color: new THREE.Color(fillColor), depthWrite: false, transparent: true })
+      new THREE.MeshBasicMaterial({ color: parsedFill.color, depthWrite: false, transparent: true, opacity: parsedFill.opacity })
     );
     fillMesh.renderOrder = 0;
     scene.add(fillMesh);
@@ -267,7 +273,8 @@ export function drawBar(key, x, y, w, h, pct, bgColor, fillColor, radius = 4) {
   }
 
   fillMesh.position.set(fillPos.x, fillPos.y, 0.2);
-  fillMesh.material.color.set(fillColor);
+  fillMesh.material.color.copy(parsedFill.color);
+  fillMesh.material.opacity = parsedFill.opacity;
   fillMesh.geometry.dispose();
   fillMesh.geometry = new THREE.PlaneGeometry(fillW, h);
 }
@@ -278,11 +285,16 @@ export function drawOutline(key, x, y, w, h, color, lineWidth = 2, radius = 0) {
   let mesh = meshPool.get(key);
 
   const pos = gameToThree(x, y, w, h);
+  const parsedColor = parseColor(color);
 
   if (!mesh) {
     const shapeGeo = new THREE.PlaneGeometry(w, h);
     const edges = new THREE.EdgesGeometry(shapeGeo);
-    const mat = new THREE.LineBasicMaterial({ color: new THREE.Color(color) });
+    const mat = new THREE.LineBasicMaterial({
+      color: parsedColor.color,
+      transparent: parsedColor.opacity < 1,
+      opacity: parsedColor.opacity,
+    });
     mesh = new THREE.LineSegments(edges, mat);
     mesh.renderOrder = 1;
     scene.add(mesh);
@@ -291,7 +303,8 @@ export function drawOutline(key, x, y, w, h, color, lineWidth = 2, radius = 0) {
   }
 
   mesh.position.set(pos.x, pos.y, 0.3);
-  mesh.material.color.set(color);
+  mesh.material.color.copy(parsedColor.color);
+  mesh.material.opacity = parsedColor.opacity;
 }
 
 // ============================================================
@@ -315,12 +328,18 @@ export function addRectToGroup(group, childKey, localX, localY, w, h, color) {
   const childName = '__rect_' + childKey;
   let mesh = group.getObjectByName(childName);
 
-  const threeColor = new THREE.Color(color);
+  const parsedColor = parseColor(color);
+  const threeColor = parsedColor.color;
   const pos = gameToThree(localX, localY, w, h);
 
   if (!mesh) {
     const geo = new THREE.PlaneGeometry(w, h);
-    const mat = new THREE.MeshBasicMaterial({ color: threeColor, depthWrite: false, transparent: true });
+    const mat = new THREE.MeshBasicMaterial({
+      color: threeColor,
+      depthWrite: false,
+      transparent: true,
+      opacity: parsedColor.opacity,
+    });
     mesh = new THREE.Mesh(geo, mat);
     mesh.name = childName;
     mesh.renderOrder = 0;
@@ -329,6 +348,7 @@ export function addRectToGroup(group, childKey, localX, localY, w, h, color) {
 
   mesh.position.set(pos.x - group.userData.width / 2, pos.y + group.userData.height / 2, 0);
   mesh.material.color.copy(threeColor);
+  mesh.material.opacity = parsedColor.opacity;
   mesh.visible = true;
 
   return mesh;
@@ -741,6 +761,13 @@ export function positionModel3D(model, gameX, gameY, gameW, gameH, facing, zOffs
 
 // Tile depth cache (InstancedMesh groups per tile type)
 let tile3DGroups = new Map(); // tileType → THREE.Group
+let tile3DCacheKey = '';
+let tile3DCacheMap = null;
+
+export function invalidateTile3DCache() {
+  tile3DCacheKey = '';
+  tile3DCacheMap = null;
+}
 
 /** Stage-themed tile materials */
 function getTileMaterial(tileType, stageId) {
@@ -793,16 +820,6 @@ function getTileDepth(tileType) {
 
 /** Rebuild 3D tile blocks — replaces flat InstancedMesh with 3D boxes */
 export function rebuildTiles3D(tileMap, stageId, cameraX, cameraY, gameTime) {
-  // Remove old 3D tile groups
-  for (const [type, group] of tile3DGroups) {
-    scene.remove(group);
-    group.traverse((child) => {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) child.material.dispose();
-    });
-  }
-  tile3DGroups.clear();
-
   if (!tileMap || tileMap.length === 0) return;
 
   const H = tileMap.length;
@@ -819,6 +836,16 @@ export function rebuildTiles3D(tileMap, stageId, cameraX, cameraY, gameTime) {
   const endTX = Math.min(W, Math.ceil((camCenterX + visibleW / 2 + TILE) / TILE));
   const startTY = Math.max(0, Math.floor((camCenterY - visibleH / 2 - TILE) / TILE));
   const endTY = Math.min(H, Math.ceil((camCenterY + visibleH / 2 + TILE) / TILE));
+  const cacheKey = `${stageId}:${startTX}:${endTX}:${startTY}:${endTY}`;
+
+  if (tile3DCacheMap === tileMap && tile3DCacheKey === cacheKey) {
+    updateTile3DEmissive(gameTime);
+    return;
+  }
+
+  clearTile3DGroups();
+  tile3DCacheMap = tileMap;
+  tile3DCacheKey = cacheKey;
 
   // Group tiles by type for batched rendering
   const tilesByType = new Map();
@@ -835,7 +862,6 @@ export function rebuildTiles3D(tileMap, stageId, cameraX, cameraY, gameTime) {
     }
   }
 
-  const S = MODEL_SCALE;
   const dummy = new THREE.Object3D();
 
   // Create InstancedMesh per tile type
@@ -874,6 +900,29 @@ export function rebuildTiles3D(tileMap, stageId, cameraX, cameraY, gameTime) {
     instMesh.receiveShadow = true;
     scene.add(instMesh);
     tile3DGroups.set(tileType, instMesh);
+  }
+}
+
+function clearTile3DGroups() {
+  for (const group of tile3DGroups.values()) {
+    scene.remove(group);
+    group.traverse((child) => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    });
+  }
+  tile3DGroups.clear();
+}
+
+function updateTile3DEmissive(gameTime) {
+  const checkpointMesh = tile3DGroups.get(9);
+  if (checkpointMesh?.material) {
+    checkpointMesh.material.emissiveIntensity = Math.sin(gameTime * 0.08) * 0.3 + 0.3;
+  }
+
+  const altarMesh = tile3DGroups.get(12);
+  if (altarMesh?.material) {
+    altarMesh.material.emissiveIntensity = Math.sin(gameTime * 0.08) * 0.2 + 0.2;
   }
 }
 
@@ -941,6 +990,21 @@ export function parseHexAlpha(hex) {
     };
   }
   return { r: 1, g: 1, b: 1, a: 1 };
+}
+
+function parseColor(color) {
+  if (typeof color === 'string' && /^#[0-9a-fA-F]{8}$/.test(color)) {
+    const parsed = parseHexAlpha(color);
+    return {
+      color: new THREE.Color(parsed.r, parsed.g, parsed.b),
+      opacity: parsed.a,
+    };
+  }
+
+  return {
+    color: new THREE.Color(color),
+    opacity: 1,
+  };
 }
 
 /** Create a material with hex+alpha color */

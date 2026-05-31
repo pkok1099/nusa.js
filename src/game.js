@@ -33,7 +33,7 @@ import {
   drawInventory, drawShop, drawMapSelect, drawLoadingScreen, drawBossSummonEffect,
   drawInteractionLabels, drawLevelUp, drawPauseMenu,
   setGameTime, resetBossIntroTimer, resetGameOverTimer, setCurrentStageId, setInvTab,
-  showSaveIndicator, drawMiniMap, drawBloodstain,
+  showSaveIndicator, drawMiniMap, drawBloodstain, getUIDebug, hideOverlay,
 } from './draw-game.js';
 import { saveGame, loadGame, hasSaveGame, deleteSaveGame } from './save.js';
 import {
@@ -99,6 +99,12 @@ let shopFromStage = false;
 let loadingTargetMap = 0;
 let loadingTimer = 0;
 let bossSummonTimer = 0;
+let debugEnabled = new URLSearchParams(window.location.search).get('debug') === '1' ||
+  localStorage.getItem('nusa_debug') === '1';
+let debugEl = null;
+let debugLastUpdate = 0;
+let debugFrameCount = 0;
+let debugFps = 0;
 
 // ---- Fixed timestep variables (Phase 2) ----
 let lastFrameTime = 0;
@@ -117,6 +123,55 @@ initRenderer(gameCanvas);
 setupInput(gameCanvas);
 
 const loadingEl = document.getElementById('loading');
+
+function updateDebugPanel(now) {
+  if (justPressed('F3')) {
+    debugEnabled = !debugEnabled;
+    localStorage.setItem('nusa_debug', debugEnabled ? '1' : '0');
+  }
+
+  if (!debugEnabled) {
+    if (debugEl) debugEl.style.display = 'none';
+    return;
+  }
+
+  if (!debugEl) {
+    debugEl = document.createElement('div');
+    debugEl.id = 'nusa-debug';
+    debugEl.style.cssText = [
+      'position:absolute',
+      'left:8px',
+      'bottom:8px',
+      'z-index:100',
+      'padding:6px 8px',
+      'background:#000C',
+      'color:#7CFF8A',
+      'font:11px monospace',
+      'line-height:1.35',
+      'pointer-events:none',
+      'white-space:pre',
+    ].join(';');
+    document.getElementById('gameContainer').appendChild(debugEl);
+  }
+
+  debugEl.style.display = 'block';
+  debugFrameCount++;
+  if (now - debugLastUpdate >= 500) {
+    debugFps = Math.round(debugFrameCount * 1000 / Math.max(1, now - debugLastUpdate));
+    debugFrameCount = 0;
+    debugLastUpdate = now;
+  }
+
+  const mapSize = tileMap?.length ? `${tileMap[0].length}x${tileMap.length}` : 'none';
+  const ui = getUIDebug();
+  debugEl.textContent =
+    `state: ${gameState.value} fps: ${debugFps}\n` +
+    `loading: ${loadingTimer}/${MAP_LOAD_DURATION} target:${loadingTargetMap} current:${currentMapId}\n` +
+    `mouse: ${Math.round(mouse.x)},${Math.round(mouse.y)} clicked:${mouse.clicked}\n` +
+    `map: ${mapSize} entities:${entities.length} boss:${boss ? 'yes' : 'no'}\n` +
+    `hover: ${ui.mapSelectHover}\n` +
+    `last: ${ui.mapSelectLastClick}`;
+}
 
 function resize() {
   resizeRenderer();
@@ -187,6 +242,7 @@ function startMap(mapId) {
 
   // Show HUD during gameplay
   hudEl.style.display = 'block';
+  hideOverlay();
 
   gameState.value = 'playing';
 
@@ -498,6 +554,7 @@ function renderFrame() {
     }
 
     case 'playing': {
+      hideOverlay();
       // ---- RENDER ONLY ---- (game logic runs in fixedStep())
       drawBackground();
       drawLevel(tileMap);
@@ -542,6 +599,7 @@ function renderFrame() {
     }
 
     case 'dialog': {
+      hideOverlay();
       const result = updateDialog();
       if (result && result.done) {
         gameState.value = 'playing';
@@ -781,6 +839,7 @@ function gameLoop(now) {
   renderFrame();
 
   // ---- Post-frame cleanup ----
+  updateDebugPanel(now);
   savePrevKeys();
   mouse.clicked = false;
   requestAnimationFrame(gameLoop);
