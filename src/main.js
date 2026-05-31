@@ -32,14 +32,17 @@ async function boot() {
     initSpatialAudio();
     if (loadProgressEl) loadProgressEl.textContent = 'Spatial audio ready ✓';
 
-    // Step 4: Initialize Phase 5 — Post-Processing
+    // Step 4: Import game.js (which starts the game loop and calls initRenderer)
+    if (loadProgressEl) loadProgressEl.textContent = 'Initializing game...';
+    await import('./game.js');
+
+    // Step 5: Initialize Phase 5 — Post-Processing
+    // MUST be called AFTER game.js imports, because initRenderer() runs
+    // at game.js module-load time, creating the renderer/scene/camera that
+    // post-processing depends on.
     if (loadProgressEl) loadProgressEl.textContent = 'Setting up post-processing...';
     initPostProcessing();
     if (loadProgressEl) loadProgressEl.textContent = 'Post-processing ready ✓';
-
-    // Step 5: Import game.js (which starts the game loop)
-    if (loadProgressEl) loadProgressEl.textContent = 'Initializing game...';
-    await import('./game.js');
 
     // Step 6: Hide loading screen
     if (loadingEl) loadingEl.style.display = 'none';
