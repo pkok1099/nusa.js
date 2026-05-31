@@ -42,21 +42,25 @@ canvas{display:block;margin:auto;image-rendering:pixelated}
 </div>
 </div>
 
-<!-- Cache-bust: append version to prevent stale cached modules -->
-<script>
-  // Inject version into all module URLs to bust browser cache
-  window.__nusaVersion = '0.8.1';
-  var _origFetch = window.fetch;
+<!-- Cache-bust: VERSION is loaded from config.js — single source of truth -->
+<script type="module">
+  // Import VERSION from config.js — the ONLY place version is defined
+  // When bumping version, ONLY update js/config.js VERSION export (and package.json to match)
+  const { VERSION } = await import('./js/config.js');
+  window.__nusaVersion = VERSION;
+
+  // Override fetch to append version query param for cache-busting
+  const _origFetch = window.fetch;
   window.fetch = function(url, opts) {
     if (typeof url === 'string' && (url.indexOf('/js/') >= 0 || url.indexOf('/map/') >= 0) && url.indexOf('?v=') < 0 && url.indexOf('t=') < 0) {
-      url = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'v=' + window.__nusaVersion;
+      url = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'v=' + VERSION;
     }
     return _origFetch.call(this, url, opts);
   };
-</script>
 
-<!-- ES Module Entry Point — browser native, no build tool needed -->
-<script type="module" src="js/game.js?v=0.8.1"></script>
+  // Load game entry point (cache-busted via fetch override)
+  await import('./js/game.js');
+</script>
 
 <!-- Fallback: if module fails to load, show error with diagnostics -->
 <script>

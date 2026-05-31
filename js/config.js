@@ -2,6 +2,10 @@
 // config.js — Game constants and color palette
 // ============================================================
 
+// ⚠️ SINGLE SOURCE OF TRUTH for version — update ONLY here
+// package.json version should match this value
+export const VERSION = '0.8.1';
+
 // Core game dimensions
 export const GAME_W = 960;
 export const GAME_H = 540;

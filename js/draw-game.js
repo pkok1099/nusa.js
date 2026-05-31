@@ -2,7 +2,7 @@
 // draw-game.js — All game rendering functions
 // ============================================================
 
-import { C, GAME_W, GAME_H, TILE, PARRY_DURATION, PARRY_WINDOW, HEAVY_ATTACK_WINDUP, HEAVY_ATTACK_DURATION, COMBO_1_DURATION, COMBO_2_DURATION, COMBO_3_DURATION, BOSS_RECOVERY_FRAMES, STAGES, STAT_NAMES, STAT_LABELS, STAT_PER_POINT, HOLLOWING_MAX_LEVEL, VISCERAL_DURATION, TILE_PUZZLE_DOOR, TILE_EXIT_DOOR, TILE_BOSS_ALTAR, MAP_LOAD_DURATION, BOSS_SUMMON_DURATION } from './config.js';
+import { C, GAME_W, GAME_H, TILE, PARRY_DURATION, PARRY_WINDOW, HEAVY_ATTACK_WINDUP, HEAVY_ATTACK_DURATION, COMBO_1_DURATION, COMBO_2_DURATION, COMBO_3_DURATION, BOSS_RECOVERY_FRAMES, STAGES, STAT_NAMES, STAT_LABELS, STAT_PER_POINT, HOLLOWING_MAX_LEVEL, VISCERAL_DURATION, TILE_PUZZLE_DOOR, TILE_EXIT_DOOR, TILE_BOSS_ALTAR, MAP_LOAD_DURATION, BOSS_SUMMON_DURATION, VERSION } from './config.js';
 import { drawText, drawRect, drawBar, drawOutline, getCtx } from './renderer.js';
 import { camera } from './camera.js';
 import { player } from './player.js';
@@ -1542,7 +1542,7 @@ export function drawMenu() {
     drawText('[ESC] Kembali', GAME_W / 2, GAME_H - 110, 12, C.textDim, 'center');
   }
 
-  drawText('v0.8.0 — Map System Redesign', GAME_W / 2, GAME_H - 30, 9, C.textDim, 'center');
+  drawText(`v${VERSION} — Map System Redesign`, GAME_W / 2, GAME_H - 30, 9, C.textDim, 'center');
 
   if (justPressed('ArrowUp') || justPressed('KeyW')) menuSelection = (menuSelection - 1 + menuItems.length) % menuItems.length;
   if (justPressed('ArrowDown') || justPressed('KeyS')) menuSelection = (menuSelection + 1) % menuItems.length;

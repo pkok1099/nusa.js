@@ -67,12 +67,13 @@ menu → stageSelect → playing ⇄ dialog
 - **Major (X.0.0)**: Breaking changes, sistem baru besar
 - **Minor (0.X.0)**: Fitur baru, perbaikan signifikan
 - **Patch (0.0.X)**: Bug fixes, perbaikan kecil
-- Update version di 3 tempat: `package.json`, `index.html` (__nusaVersion + src param), `draw-game.js` (menu version text)
+- Update version di **1 tempat saja**: `js/config.js` (export `VERSION`) — semua file lain membaca dari situ
+- `package.json` version harus match `config.js VERSION` (untuk npm)
 
 ### 3. Cache Busting
 - Semua JS module di-load dengan `?v=X.Y.Z`
-- `window.fetch` interceptor otomatis menambahkan versi ke URL
-- Saat update versi, PASTIKAN 3 tempat di-update (lihat poin 2)
+- `index.html` membaca `VERSION` dari `js/config.js` via dynamic import, lalu override `window.fetch` untuk cache-busting
+- Versi hanya didefinisikan di `js/config.js` — cukup update 1 tempat
 
 ### 4. Collision System
 - **Solid tiles**: 1 (stone), 3 (lava), 5 (tree trunk), 7 (wall) — player TIDAK bisa lewat
