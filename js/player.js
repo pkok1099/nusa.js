@@ -876,8 +876,28 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
     }
   }
 
-  // Fall death
-  if (tileMap && player.y > tileMap.length * 32 + 100) playerDie();
+  // Fall reset — if player falls below the map, respawn at last checkpoint
+  // (or map start if no checkpoint was reached)
+  if (tileMap && player.y > tileMap.length * 32 + 100) {
+    // Instead of dying from falling, just teleport back to safety
+    // This prevents softlocks where player falls into unreachable pits
+    player.x = player.checkpoint.x;
+    player.y = player.checkpoint.y;
+    player.prevY = player.y;
+    player.vx = 0;
+    player.vy = 0;
+    player.grounded = false;
+    player.coyoteTimer = 0;
+    player.invincible = 60;
+    // Small HP penalty for falling (souls-like style)
+    const fallDmg = Math.floor(getStats().maxHp * 0.1);
+    if (fallDmg > 0 && player.hp > fallDmg) {
+      player.hp -= fallDmg;
+      spawnFloatingText(player.x + player.w / 2, player.y - 30, `-${fallDmg} (Jatuh)`, C.orange);
+    }
+    spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.orange, 15, 4, 30);
+    playSound('damage');
+  }
 
   // Souls-like v0.7.0: Bloodstain proximity recovery
   // If player walks near their bloodstain, recover lost Rupiah
@@ -944,11 +964,13 @@ function applyGravityAndCollision(tileMap) {
   }
 
   // ---- STEP 1: Apply horizontal movement, then resolve horizontal collisions ----
-  // Using a vertically-inset hitbox (shrink top/bottom by 4px) prevents
+  // Using a vertically-inset hitbox (shrink top/bottom by 6px) prevents
   // "corner catching" where the player's head clips a wall tile above and
   // gets pushed back even though they should be able to walk past.
+  // BUG FIX v0.8.2: Increased inset from 4→6 to better prevent wall-stick
+  // when jumping near wall edges.
   player.x += player.vx;
-  const H_INSET = 4;
+  const H_INSET = 6;
   const colsX = tileCollision(player.x, player.y + H_INSET, player.w, player.h - H_INSET * 2, player.prevY);
   for (const c of colsX) {
     if (c.oneway) continue; // One-way platforms never block horizontally
@@ -973,12 +995,21 @@ function applyGravityAndCollision(tileMap) {
   }
 
   // ---- STEP 2: Apply vertical movement, then resolve vertical collisions ----
-  // Using a horizontally-inset hitbox (shrink left/right by 2px) prevents
-  // the player from catching on wall edges when falling straight down.
+  // BUG FIX v0.8.2: Increased horizontal inset from 2→4 to prevent
+  // the player from catching on wall edges when jumping up near walls.
+  // This was causing "gravity error" where vy would get zeroed by
+  // wall tiles being detected as vertical collisions.
   player.y += player.vy;
   player.grounded = false;
-  const V_INSET = 2;
+  const V_INSET = 4;
   const colsY = tileCollision(player.x + V_INSET, player.y, player.w - V_INSET * 2, player.h, player.prevY);
+  // Sort vertical collisions: resolve floor (bottom) first, then ceiling
+  // This prevents ceiling tiles from overriding floor grounding
+  colsY.sort((a, b) => {
+    if (a.oneway && !b.oneway) return -1; // one-way first
+    if (!a.oneway && b.oneway) return 1;
+    return a.y - b.y; // sort by Y position
+  });
   for (const c of colsY) {
     if (c.oneway) {
       // One-way platforms: only resolve when falling down onto them.
@@ -992,7 +1023,12 @@ function applyGravityAndCollision(tileMap) {
       }
       continue;
     }
-    // Solid tile resolution
+    // Solid tile resolution — skip tiles that the player's inset hitbox
+    // doesn't actually overlap with (safety check for wall-adjacent tiles)
+    const playerLeft = player.x + V_INSET;
+    const playerRight = player.x + player.w - V_INSET;
+    if (playerRight <= c.x || playerLeft >= c.x + c.w) continue;
+    
     if (player.vy > 0) {
       // Falling down → push player's bottom to tile's top, set grounded
       player.y = c.y - player.h;
