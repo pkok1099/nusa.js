@@ -91,7 +91,7 @@ const PUZZLE_CONFIGS = [
 // ---- Pipe type definitions for Water Channels puzzle ----
 // Each pipe type defines which sides are open: top, right, bottom, left
 // Rotation rotates these openings clockwise
-const PIPE_CONNECTIONS = {
+export const PIPE_CONNECTIONS = {
   0: [],                          // empty — no connections
   1: [false, true, false, true],  // horizontal (left-right)
   2: [true, false, true, false],  // vertical (top-bottom)

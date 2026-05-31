@@ -43,6 +43,8 @@ import { spawnParticle, spawnFloatingText, particles } from './particles.js';
 import { inventory, getComputedStats, useHealthPotion, updateBuffs, countHealthPotions, addItem } from './inventory.js';
 import { WEAPONS, ARMORS, ACCESSORIES, POTIONS } from './config.js';
 import { getEquipmentDropRate, getRandomEquipmentDropForStage, getBossDrop } from './entities.js';
+import { resetShopState } from './shop.js';
+import { isDoorOpen } from './map-manager.js';
 
 // Helper to get raw weapon id string (no object creation)
 function getEquippedWeaponRaw() {
@@ -682,6 +684,7 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
         if (dist < 60) {
           if (e.npcType === 'pedagang') {
             // Open shop instead of dialog
+            resetShopState();
             gameStateRef.value = 'shop';
             interacted = true;
           } else {
@@ -703,7 +706,8 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
 
     // ---- BOSS ALTAR INTERACTION ----
     // Check if player is standing on or near a boss altar tile
-    if (!interacted) {
+    // Only allow if boss exists, is not active, and is not alive (defeated)
+    if (!interacted && !bossActive && boss && !boss.alive) {
       const altarTx = Math.floor((player.x + player.w / 2) / 32);
       const altarTy = Math.floor((player.y + player.h) / 32);
       // Check current tile and nearby tiles for boss altar
@@ -714,9 +718,8 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
           if (tileMap && ty >= 0 && ty < tileMap.length && tx >= 0 && tx < tileMap[0].length) {
             if (tileMap[ty][tx] === TILE_BOSS_ALTAR) {
               const altarPx = tx * 32;
-              const altarPy = ty * 32;
               const dist = Math.abs((player.x + player.w / 2) - (altarPx + 16));
-              if (dist < ALTAR_INTERACT_RANGE && justPressed('KeyE')) {
+              if (dist < ALTAR_INTERACT_RANGE) {
                 interacted = true;
                 return 'interactAltar';
               }
@@ -727,7 +730,8 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
     }
 
     // ---- EXIT DOOR INTERACTION ----
-    if (!interacted) {
+    // Only allow if door is open and not the last map
+    if (!interacted && isDoorOpen(player.currentStageId) && player.currentStageId < 4) {
       const doorTx = Math.floor((player.x + player.w / 2) / 32);
       const doorTy = Math.floor((player.y + player.h) / 32);
       for (let dy = -1; dy <= 0; dy++) {
@@ -737,9 +741,8 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
           if (tileMap && ty >= 0 && ty < tileMap.length && tx >= 0 && tx < tileMap[0].length) {
             if (tileMap[ty][tx] === TILE_EXIT_DOOR) {
               const doorPx = tx * 32;
-              const doorPy = ty * 32;
               const dist = Math.abs((player.x + player.w / 2) - (doorPx + 16));
-              if (dist < DOOR_INTERACT_RANGE && justPressed('KeyE')) {
+              if (dist < DOOR_INTERACT_RANGE) {
                 interacted = true;
                 return 'interactExitDoor';
               }
@@ -761,7 +764,7 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
             if (tileMap[ty][tx] === TILE_PUZZLE_DOOR) {
               const doorPx = tx * 32;
               const dist = Math.abs((player.x + player.w / 2) - (doorPx + 16));
-              if (dist < DOOR_INTERACT_RANGE && justPressed('KeyE')) {
+              if (dist < DOOR_INTERACT_RANGE) {
                 interacted = true;
                 return 'interactPuzzleDoor';
               }
@@ -940,20 +943,78 @@ function applyGravityAndCollision(tileMap) {
     if (player.vy > MAX_FALL) player.vy = MAX_FALL;
   }
 
+  // ---- STEP 1: Apply horizontal movement, then resolve horizontal collisions ----
+  // Using a vertically-inset hitbox (shrink top/bottom by 4px) prevents
+  // "corner catching" where the player's head clips a wall tile above and
+  // gets pushed back even though they should be able to walk past.
   player.x += player.vx;
-  const colsX = tileCollision(player.x, player.y, player.w, player.h, player.prevY);
-  colsX.forEach(c => {
-    if (c.oneway) return;
-    if (player.vx > 0) player.x = c.x - player.w;
-    else if (player.vx < 0) player.x = c.x + c.w;
-  });
+  const H_INSET = 4;
+  const colsX = tileCollision(player.x, player.y + H_INSET, player.w, player.h - H_INSET * 2, player.prevY);
+  for (const c of colsX) {
+    if (c.oneway) continue; // One-way platforms never block horizontally
+    if (player.vx > 0) {
+      // Moving right → push player's right edge to tile's left edge
+      player.x = c.x - player.w;
+    } else if (player.vx < 0) {
+      // Moving left → push player's left edge to tile's right edge
+      player.x = c.x + c.w;
+    } else {
+      // vx is 0 but overlapping (e.g. pushed into wall externally,
+      // or rounding error) — push to whichever edge is closer
+      const overlapLeft = (player.x + player.w) - c.x;
+      const overlapRight = (c.x + c.w) - player.x;
+      if (overlapLeft < overlapRight) {
+        player.x = c.x - player.w;
+      } else {
+        player.x = c.x + c.w;
+      }
+    }
+    player.vx = 0;
+  }
+
+  // ---- STEP 2: Apply vertical movement, then resolve vertical collisions ----
+  // Using a horizontally-inset hitbox (shrink left/right by 2px) prevents
+  // the player from catching on wall edges when falling straight down.
   player.y += player.vy;
   player.grounded = false;
-  const colsY = tileCollision(player.x, player.y, player.w, player.h, player.prevY);
-  colsY.forEach(c => {
-    if (player.vy > 0) { player.y = c.y - player.h; player.vy = 0; player.grounded = true; }
-    else if (player.vy < 0 && !c.oneway) { player.y = c.y + c.h; player.vy = 0; }
-  });
+  const V_INSET = 2;
+  const colsY = tileCollision(player.x + V_INSET, player.y, player.w - V_INSET * 2, player.h, player.prevY);
+  for (const c of colsY) {
+    if (c.oneway) {
+      // One-way platforms: only resolve when falling down onto them.
+      // The tileCollision function already filtered these to only include
+      // platforms the player was above in the previous frame.
+      // Never push the player upward through a one-way platform.
+      if (player.vy > 0) {
+        player.y = c.y - player.h;
+        player.vy = 0;
+        player.grounded = true;
+      }
+      continue;
+    }
+    // Solid tile resolution
+    if (player.vy > 0) {
+      // Falling down → push player's bottom to tile's top, set grounded
+      player.y = c.y - player.h;
+      player.vy = 0;
+      player.grounded = true;
+    } else if (player.vy < 0) {
+      // Jumping up → push player's top to tile's bottom
+      player.y = c.y + c.h;
+      player.vy = 0;
+    } else {
+      // vy is 0 but overlapping (safety net) — push to nearer edge
+      const overlapTop = (player.y + player.h) - c.y;
+      const overlapBottom = (c.y + c.h) - player.y;
+      if (overlapTop < overlapBottom) {
+        player.y = c.y - player.h;
+        player.grounded = true;
+      } else {
+        player.y = c.y + c.h;
+      }
+      player.vy = 0;
+    }
+  }
 }
 
 function rectsOverlapAtk(a, b) {

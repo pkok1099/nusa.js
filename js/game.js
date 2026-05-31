@@ -19,7 +19,7 @@ import { createEnemy } from './entities.js';
 import { updateEnemies, setEnemyShakeRef } from './enemy.js';
 import { updateBoss } from './boss.js';
 import { bossSummonQueue } from './boss.js';
-import { initPuzzle, getPuzzleState, resetPuzzle } from './puzzle.js';
+import { initPuzzle, getPuzzleState, resetPuzzle, updatePuzzle, getPuzzleReward } from './puzzle.js';
 import { startDialog, updateDialog } from './dialog.js';
 import { inventory, getComputedStats, equipItem, unequipSlot, usePotion, allocateStat, updateBuffs, resetInventory, addItem } from './inventory.js';
 import { resetShopState, buyItem, sellItem } from './shop.js';
@@ -329,50 +329,31 @@ function gameLoop() {
         break;
       }
 
-      // Check for boss altar interaction (player presses E near altar)
-      let triggeredBossSummon = false;
-      if (justPressed('KeyE') && !bossActive && boss && !boss.alive) {
-        const altarPos = getBossAltarPosition(currentMapId);
-        const playerCenterX = player.x + player.w / 2;
-        const playerCenterY = player.y + player.h / 2;
-        const dx = Math.abs(playerCenterX - (altarPos.x + 16));
-        const dy = Math.abs(playerCenterY - (altarPos.y + 16));
-        if (dx < ALTAR_INTERACT_RANGE && dy < ALTAR_INTERACT_RANGE) {
-          triggeredBossSummon = true;
-        }
-      }
+      // All E key interactions are handled by updatePlayer() — no separate checks here
+      const playerAction = updatePlayer(keys, entities, boss, bossActive, getPuzzleState(), tileMap, doStartDialog, initPuzzleInternal);
 
-      // Check for exit door interaction (player presses E near open door)
-      let triggeredDoorTransition = false;
-      if (justPressed('KeyE') && isDoorOpen(currentMapId) && currentMapId < 4) {
-        const doorPos = getExitDoorPosition(currentMapId);
-        const playerCenterX = player.x + player.w / 2;
-        const playerCenterY = player.y + player.h / 2;
-        const dx = Math.abs(playerCenterX - (doorPos.x + 16));
-        const dy = Math.abs(playerCenterY - (doorPos.y + 24));
-        if (dx < DOOR_INTERACT_RANGE && dy < DOOR_INTERACT_RANGE) {
-          triggeredDoorTransition = true;
-        }
-      }
-
-      if (triggeredBossSummon) {
+      // Handle player interaction return values
+      if (playerAction === 'interactAltar') {
         // Start boss summon sequence
         bossSummonTimer = 0;
         gameState.value = 'bossSummon';
         playSound('boss');
         break;
       }
-
-      if (triggeredDoorTransition) {
+      if (playerAction === 'interactExitDoor') {
         // Transition to next map
         loadingTargetMap = currentMapId + 1;
         loadingTimer = 0;
         gameState.value = 'loading';
         break;
       }
-
-      const triggerBoss = updatePlayer(keys, entities, boss, bossActive, getPuzzleState(), tileMap, doStartDialog, initPuzzleInternal);
-      if (triggerBoss === 'triggerBoss') {
+      if (playerAction === 'interactPuzzleDoor') {
+        // Start puzzle for puzzle door interaction
+        initPuzzleInternal();
+        break;
+      }
+      if (playerAction === 'triggerBoss') {
+        // Legacy compatibility
         bossActive = true;
         playSound('boss');
         showBossIntro();
@@ -491,6 +472,7 @@ function gameLoop() {
     }
 
     case 'puzzle': {
+      updatePuzzle();
       updateParticles(hitStop.value, player, damagePlayer);
       drawBackground();
       drawLevel(tileMap);
@@ -503,6 +485,20 @@ function gameLoop() {
         puzzleSolved = true;
         // Mark puzzle as solved in map-manager
         markPuzzleSolved(`${currentMapId}_main`);
+        // Give puzzle reward
+        const reward = getPuzzleReward();
+        if (reward) {
+          if (reward.exp) gainExp(reward.exp);
+          if (reward.description) {
+            spawnFloatingText(player.x + player.w/2, player.y - 40, reward.description, C.gold);
+          }
+          // Give specific items based on map
+          if (currentMapId === 0) addItem({ id: 'health', type: 'potion', category: 'potion', ...POTIONS.health });
+          if (currentMapId === 1) addItem({ id: 'stamina', type: 'potion', category: 'potion', ...POTIONS.stamina });
+          if (currentMapId === 2) { player.rupiah += 120; }
+          if (currentMapId === 3) addItem({ id: 'defense', type: 'potion', category: 'potion', ...POTIONS.defense });
+          if (currentMapId === 4) { inventory.skillPoints += 2; }
+        }
       }
       break;
     }

@@ -16,6 +16,10 @@ import { WEAPONS, ARMORS, ACCESSORIES, POTIONS } from './config.js';
 import { hasSaveGame } from './save.js';
 import { MAP_REGISTRY, isBossDefeated, isDoorOpen } from './map-manager.js';
 import { getNearbyInteractable } from './player.js';
+import { kawiInputDigit, kawiDeleteDigit, kawiSubmitAnswer, kawiNextRound,
+         batikSelectOption, gamelanPressButton, waterRotateTile, waterCheckFlow,
+         riddleSelectAnswer, riddleToggleHint, riddleNextRound, getPuzzleReward,
+         PIPE_CONNECTIONS } from './puzzle.js';
 
 let gameTime = 0;
 let currentStageId = 0;
@@ -879,9 +883,21 @@ export function drawHUD(boss, bossActive, deathCount) {
   // Souls-like v0.7.1: Poise bar below stamina
   drawText('PS', 14, 50, 7, C.textDim, 'left');
   drawBar(30, 43, 120, 6, player.poise / player.maxPoise, '#332200', '#D4AF37', 1);
+  // Estus Flask indicator
+  drawText('Estus', 158, 50, 8, C.textDim, 'left');
+  for (let i = 0; i < player.estusMax; i++) {
+    const ex = 186 + i * 12;
+    const ey = 45;
+    if (i < player.estus) {
+      drawRect(ex, ey, 8, 10, C.green + '80', 2);
+      drawRect(ex + 2, ey + 2, 4, 4, C.green + '40');
+    } else {
+      drawRect(ex, ey, 8, 10, '#333', 2);
+    }
+  }
   // Souls-like v0.7.1: Exhaustion indicator
   if (player.exhausted) {
-    drawText('LELAH!', 160, 50, 9, C.red, 'left');
+    drawText('LELAH!', 260, 50, 9, C.red, 'left');
   }
   // Souls-like v0.7.1: Hollowing indicator
   if (player.hollowing > 0) {
@@ -890,7 +906,7 @@ export function drawHUD(boss, bossActive, deathCount) {
   }
   // Souls-like v0.7.1: Two-handing indicator
   if (player.twoHanding) {
-    drawText('2TANGAN', 158, 50, 8, C.parryGold, 'left');
+    drawText('2TANGAN', 260, 38, 8, C.parryGold, 'left');
   }
   drawText('EN', 158, 30, 11, C.textDim, 'left');
   drawBar(174, 22, 70, 14, player.energy / stats.maxEnergy, '#003344', C.cyan, 3);
@@ -1555,26 +1571,45 @@ export function drawMenu() {
 }
 
 // ---- PUZZLE ----
+
+// Helper: rotate pipe connection array clockwise by rot steps
+function rotatePipeConnections(base, rot) {
+  const r = ((rot % 4) + 4) % 4;
+  const c = [...base];
+  for (let i = 0; i < r; i++) {
+    const last = c.pop();
+    c.unshift(last);
+  }
+  return c;
+}
+
 export function drawPuzzle(pState, gainExpFn) {
   const ctx = getCtx();
+  // Dark overlay
   drawRect(0, 0, GAME_W, GAME_H, '#000000CC');
-  const stageName = STAGES[currentStageId]?.name || 'Candi Borobudur';
-  drawText(`PUZZLE ${stageName.toUpperCase()}`, GAME_W / 2, 60, 20, C.gold, 'center');
-  drawText(pState.instructions || `Ulangi urutan ${pState.sequence?.length || 0} simbol elemen!`, GAME_W / 2, 85, 12, C.textDim, 'center');
+
+  // Title and instructions
+  drawText(pState.title || 'PUZZLE', GAME_W / 2, 60, 20, C.gold, 'center');
+  drawText(pState.instructions || '', GAME_W / 2, 85, 12, C.textDim, 'center');
+
+  // Content panel
   drawRect(40, 120, GAME_W - 80, 300, '#0A0A0A90', 8);
   drawOutline(40, 120, GAME_W - 80, 300, C.gold + '30', 2, 8);
 
-  // Puzzle type-specific rendering
   const puzzleType = pState.type || 'gamelan_sequence';
 
   // --- Shared: solved state ---
   if (pState.solved) {
-    drawText('PUZZLE SELESAI!', GAME_W / 2, 240, 28, C.green, 'center');
-    drawText('[E] Lanjutkan', GAME_W / 2, 290, 14, C.gold, 'center');
+    drawText('PUZZLE SELESAI!', GAME_W / 2, 220, 28, C.green, 'center');
+    const reward = getPuzzleReward();
+    if (reward) {
+      drawText(reward.description || `+${reward.exp} EXP`, GAME_W / 2, 260, 14, C.goldLight, 'center');
+    }
+    drawText('[E] Lanjutkan', GAME_W / 2, 300, 14, C.gold, 'center');
     if (justPressed('KeyE') || justPressed('Space')) {
       playSound('pickup');
-      const reward = pState.reward || (20 + (pState.sequence?.length || 3) * 5);
-      gainExpFn(reward);
+      if (reward) gainExpFn(reward.exp);
+      else gainExpFn(20);
       return 'continue';
     }
     mouse.clicked = false;
@@ -1584,143 +1619,214 @@ export function drawPuzzle(pState, gainExpFn) {
   // --- Shared: failed state ---
   if (pState.failed) {
     drawText('GAGAL! Coba lagi...', GAME_W / 2, 240, 24, C.red, 'center');
-    pState.failTimer = (pState.failTimer || 0) + 1;
-    if (pState.failTimer > 60) {
-      pState.playerSeq = [];
-      pState.failed = false;
-      pState.failTimer = 0;
-      if (puzzleType === 'gamelan_sequence') {
-        pState.showingSequence = true;
-        pState.showIndex = 0;
-        pState.showTimer = 0;
-      }
-    }
+    drawText(`Coba ulang dalam ${Math.ceil((pState.failTimer || 0) / 60)}s...`, GAME_W / 2, 280, 12, C.textDim, 'center');
     mouse.clicked = false;
     return null;
   }
 
   // --- Type-specific rendering ---
   switch (puzzleType) {
+
+    // =========== KAWI DECIPHER ===========
     case 'kawi_decipher': {
-      // Kawi Decipher — number sequence input
-      const target = pState.sequence || [];
-      const input = pState.playerSeq || [];
+      const cfg = pState.config;
+      const currentRound = cfg.rounds[pState.round];
+      const sequence = currentRound.sequence;
 
       drawText('Dekripsi Aksara Kawi', GAME_W / 2, 145, 14, C.goldLight, 'center');
-      drawText('Masukkan angka yang benar:', GAME_W / 2, 170, 11, C.textDim, 'center');
+      drawText(`Round ${pState.round + 1}/${cfg.rounds.length}`, GAME_W / 2, 165, 11, C.textDim, 'center');
 
-      // Show target sequence with blanks
-      let seqDisplay = '';
-      for (let i = 0; i < target.length; i++) {
-        if (i < input.length) {
-          seqDisplay += `[${input[i]}] `;
-        } else if (i === input.length) {
-          seqDisplay += '[_] ';
+      // Show sequence with last element as '?'
+      const seqStr = sequence.join('  ');
+      drawText(seqStr, GAME_W / 2, 200, 22, C.text, 'center');
+
+      // Show round result feedback
+      if (pState.showRoundResult) {
+        if (pState.roundResultCorrect) {
+          drawText('BENAR!', GAME_W / 2, 230, 18, C.green, 'center');
         } else {
-          seqDisplay += ' ?  ';
+          drawText('SALAH!', GAME_W / 2, 230, 18, C.red, 'center');
+          drawText(`Petunjuk: ${currentRound.hint}`, GAME_W / 2, 255, 11, C.goldLight, 'center');
         }
+        break;
       }
-      drawText(seqDisplay, GAME_W / 2, 220, 18, C.text, 'center');
 
-      // Number input buttons (0-9)
+      // Show player input
+      drawText(`Jawaban: ${pState.inputNumber || '_'}`, GAME_W / 2, 230, 18, C.gold, 'center');
+
+      // Number buttons 0-9
       const numStartX = GAME_W / 2 - 150;
       const numStartY = 260;
       for (let n = 0; n < 10; n++) {
         const bx = numStartX + (n % 5) * 65;
-        const by = numStartY + Math.floor(n / 5) * 55;
-        const isHovered = mouse.x >= bx && mouse.x <= bx + 55 && mouse.y >= by && mouse.y <= by + 45;
-        drawRect(bx, by, 55, 45, isHovered ? C.gold + '30' : '#1A1A0A', 6);
-        drawOutline(bx, by, 55, 45, C.gold + '40', 1, 6);
-        drawText(`${n}`, bx + 27, by + 22, 22, isHovered ? C.gold : C.text, 'center');
+        const by = numStartY + Math.floor(n / 5) * 50;
+        const isHovered = mouse.x >= bx && mouse.x <= bx + 55 && mouse.y >= by && mouse.y <= by + 42;
+        drawRect(bx, by, 55, 42, isHovered ? C.gold + '30' : '#1A1A0A', 6);
+        drawOutline(bx, by, 55, 42, C.gold + '40', 1, 6);
+        drawText(`${n}`, bx + 27, by + 20, 20, isHovered ? C.gold : C.text, 'center');
         if (isHovered && mouse.clicked) {
-          pState.playerSeq = pState.playerSeq || [];
-          pState.playerSeq.push(n);
+          kawiInputDigit(String(n));
           playSound('dialog');
-          const idx = pState.playerSeq.length - 1;
-          if (pState.playerSeq[idx] !== target[idx]) {
-            pState.failed = true; pState.failTimer = 0; playSound('damage');
-          } else if (pState.playerSeq.length === target.length) {
-            pState.solved = true; playSound('puzzle');
-          }
         }
       }
 
-      // Backspace
-      drawRect(GAME_W / 2 - 40, 380, 80, 30, C.red + '20', 4);
-      drawText('Hapus', GAME_W / 2, 395, 11, C.red + '80', 'center');
-      if (justPressed('Backspace') && pState.playerSeq && pState.playerSeq.length > 0) {
-        pState.playerSeq.pop();
+      // Keyboard digit input
+      for (let d = 0; d <= 9; d++) {
+        if (justPressed(`Digit${d}`)) {
+          kawiInputDigit(String(d));
+          playSound('dialog');
+        }
       }
-      drawText(`Input: ${input.length}/${target.length}`, GAME_W / 2, 415, 11, C.textDim, 'center');
+
+      // Submit button
+      const subX = GAME_W / 2 - 55;
+      const subY = 370;
+      const subHovered = mouse.x >= subX && mouse.x <= subX + 110 && mouse.y >= subY && mouse.y <= subY + 30;
+      drawRect(subX, subY, 110, 30, subHovered ? C.gold + '40' : C.gold + '20', 4);
+      drawText('Kirim [Enter]', subX + 55, subY + 15, 12, C.gold, 'center');
+      if ((subHovered && mouse.clicked) || justPressed('Enter')) {
+        kawiSubmitAnswer();
+      }
+
+      // Backspace button
+      const delX = GAME_W / 2 + 65;
+      const delY = 370;
+      const delHovered = mouse.x >= delX && mouse.x <= delX + 80 && mouse.y >= delY && mouse.y <= delY + 30;
+      drawRect(delX, delY, 80, 30, delHovered ? C.red + '40' : C.red + '20', 4);
+      drawText('Hapus [⌫]', delX + 40, delY + 15, 11, C.red + '80', 'center');
+      if ((delHovered && mouse.clicked) || justPressed('Backspace')) {
+        kawiDeleteDigit();
+        playSound('dialog');
+      }
+
+      // Wrong attempts
+      if (pState.wrongAttempts > 0) {
+        drawText(`Kesalahan: ${pState.wrongAttempts}/3`, GAME_W / 2, 415, 11, C.red + '80', 'center');
+      }
       break;
     }
 
+    // =========== BATIK PATTERN ===========
     case 'batik_pattern': {
-      // Batik Pattern — match the pattern grid with missing tile
-      const grid = pState.grid || [];
-      const options = pState.options || [];
-      const missingIdx = pState.missingIdx || 0;
+      const pattern = pState.currentPattern;
+      const grid = pattern.grid;
+      const symbols = pattern.symbols;
+      const options = pattern.options;
 
       drawText('Lengkapi Pola Batik', GAME_W / 2, 145, 14, C.goldLight, 'center');
+      drawText(`Round ${pState.round + 1}/${pState.config.patterns.length}`, GAME_W / 2, 165, 11, C.textDim, 'center');
 
       // Draw grid
-      const gridSize = grid.length;
-      const cellSize = 40;
-      const gridStartX = GAME_W / 2 - (gridSize * cellSize) / 2;
-      const gridStartY = 170;
-      for (let r = 0; r < gridSize; r++) {
-        for (let c = 0; c < gridSize; c++) {
+      const gridRows = grid.length;
+      const gridCols = grid[0].length;
+      const cellSize = 42;
+      const gridStartX = GAME_W / 2 - (gridCols * cellSize) / 2;
+      const gridStartY = 180;
+      for (let r = 0; r < gridRows; r++) {
+        for (let c = 0; c < gridCols; c++) {
           const gx = gridStartX + c * cellSize;
           const gy = gridStartY + r * cellSize;
-          const idx = r * gridSize + c;
-          if (idx === missingIdx) {
+          const val = grid[r][c];
+          const isMissing = val === '?';
+          if (isMissing) {
             drawRect(gx, gy, cellSize - 2, cellSize - 2, '#1A1A0A', 4);
             drawOutline(gx, gy, cellSize - 2, cellSize - 2, C.gold + '60', 2, 4);
             drawText('?', gx + cellSize / 2 - 1, gy + cellSize / 2, 18, C.gold, 'center');
           } else {
-            const cellColor = grid[idx] || C.stone;
-            drawRect(gx, gy, cellSize - 2, cellSize - 2, cellColor, 4);
+            const sym = symbols[val - 1] || '·';
+            drawRect(gx, gy, cellSize - 2, cellSize - 2, '#1A1A0A', 4);
             drawOutline(gx, gy, cellSize - 2, cellSize - 2, C.gold + '20', 1, 4);
+            drawText(sym, gx + cellSize / 2 - 1, gy + cellSize / 2, 20, C.text, 'center');
           }
         }
       }
 
       // Draw options
-      drawText('Pilih:', GAME_W / 2, gridStartY + gridSize * cellSize + 15, 12, C.gold, 'center');
+      drawText('Pilih:', GAME_W / 2, gridStartY + gridRows * cellSize + 15, 12, C.gold, 'center');
       const optStartX = GAME_W / 2 - (options.length * 60) / 2;
-      const optY = gridStartY + gridSize * cellSize + 35;
+      const optY = gridStartY + gridRows * cellSize + 35;
       for (let i = 0; i < options.length; i++) {
         const ox = optStartX + i * 60;
+        const sym = symbols[options[i] - 1] || '?';
         const isHovered = mouse.x >= ox && mouse.x <= ox + 50 && mouse.y >= optY && mouse.y <= optY + 50;
-        drawRect(ox, optY, 50, 50, options[i], 6);
+        drawRect(ox, optY, 50, 50, isHovered ? C.gold + '30' : '#1A1A0A', 6);
         drawOutline(ox, optY, 50, 50, isHovered ? C.gold : C.gold + '30', 2, 6);
+        drawText(sym, ox + 25, optY + 25, 22, isHovered ? C.gold : C.text, 'center');
         if (isHovered && mouse.clicked) {
-          playSound('dialog');
-          if (i === pState.correctOption) {
-            pState.solved = true; playSound('puzzle');
-          } else {
-            pState.failed = true; pState.failTimer = 0; playSound('damage');
-          }
+          batikSelectOption(i);
         }
+      }
+
+      // Wrong attempts
+      if (pState.wrongAttempts > 0) {
+        drawText(`Kesalahan: ${pState.wrongAttempts}/3`, GAME_W / 2, optY + 65, 11, C.red + '80', 'center');
       }
       break;
     }
 
+    // =========== GAMELAN SEQUENCE ===========
+    case 'gamelan_sequence': {
+      const cfg = pState.config;
+      const currentSeq = cfg.sequences[pState.round] || [];
+
+      drawText('Ritme Gamelan', GAME_W / 2, 145, 14, C.goldLight, 'center');
+      drawText(`Round ${pState.round + 1}/${cfg.sequences.length}`, GAME_W / 2, 165, 11, C.textDim, 'center');
+
+      if (pState.showingSequence) {
+        // Showing the sequence to the player — handled by updatePuzzle()
+        drawText('Perhatikan urutan!', GAME_W / 2, 190, 12, C.textDim, 'center');
+
+        // Draw buttons with highlight
+        pState.buttons.forEach((btn, i) => {
+          const isHighlighted = pState.highlight === i;
+          drawRect(btn.x, btn.y, btn.w, btn.h, isHighlighted ? C.gold + '40' : '#1A1A0A', 8);
+          drawOutline(btn.x, btn.y, btn.w, btn.h, isHighlighted ? C.gold : C.gold + '30', 2, 8);
+          drawText(btn.symbol, btn.x + btn.w / 2, btn.y + btn.h / 2 - 5, 28, isHighlighted ? '#fff' : C.textDim, 'center');
+        });
+
+        // Progress indicator
+        if (currentSeq.length > 0) {
+          drawText(`Urutan ${pState.showIndex + 1}/${currentSeq.length}`, GAME_W / 2, pState.buttons[0].y + pState.buttons[0].h + 30, 14, C.textDim, 'center');
+        }
+      } else {
+        // Player input phase
+        drawText('Ulangi urutan!', GAME_W / 2, 190, 12, C.textDim, 'center');
+
+        pState.buttons.forEach((btn, i) => {
+          const isHighlighted = pState.highlight === i;
+          const isHovered = mouse.x >= btn.x && mouse.x <= btn.x + btn.w && mouse.y >= btn.y && mouse.y <= btn.y + btn.h;
+          drawRect(btn.x, btn.y, btn.w, btn.h, isHighlighted ? C.gold + '40' : (isHovered ? C.gold + '20' : '#1A1A0A'), 8);
+          drawOutline(btn.x, btn.y, btn.w, btn.h, isHighlighted ? C.gold : C.gold + '30', 2, 8);
+          drawText(btn.symbol, btn.x + btn.w / 2, btn.y + btn.h / 2 - 5, 28, '#fff', 'center');
+          if ((isHovered && mouse.clicked) || justPressed(`Digit${i + 1}`)) {
+            gamelanPressButton(i);
+          }
+        });
+
+        drawText(`Urutan: ${pState.playerSeq.length}/${currentSeq.length}`, GAME_W / 2, pState.buttons[0].y + pState.buttons[0].h + 30, 14, C.text, 'center');
+      }
+      break;
+    }
+
+    // =========== WATER CHANNELS ===========
     case 'water_channels': {
-      // Water Channels — rotatable pipe tiles
-      const pipes = pState.pipes || [];
-      const pGridW = pState.gridW || 4;
-      const pGridH = pState.gridH || 4;
+      const cfg = pState.config;
+      const size = cfg.gridSize;
+      const grid = pState.channelGrid;
       const cellSz = 50;
 
       drawText('Alirkan Air — Putar Pipa', GAME_W / 2, 145, 14, C.goldLight, 'center');
 
-      const gStartX = GAME_W / 2 - (pGridW * cellSz) / 2;
+      const gStartX = GAME_W / 2 - (size * cellSz) / 2;
       const gStartY = 170;
-      for (let r = 0; r < pGridH; r++) {
-        for (let c = 0; c < pGridW; c++) {
-          const idx = r * pGridW + c;
-          const pipe = pipes[idx];
+
+      // Source and destination indicators
+      drawText('⬇ Sumber', gStartX, gStartY - 12, 10, C.cyan, 'left');
+      drawText('Kuil ⬇', gStartX + (size - 1) * cellSz, gStartY + size * cellSz + 8, 10, C.cyan, 'left');
+
+      for (let r = 0; r < size; r++) {
+        for (let c = 0; c < size; c++) {
+          const tile = grid[r][c];
           const px = gStartX + c * cellSz;
           const py = gStartY + r * cellSz;
           const isHovered = mouse.x >= px && mouse.x <= px + cellSz - 2 && mouse.y >= py && mouse.y <= py + cellSz - 2;
@@ -1729,68 +1835,72 @@ export function drawPuzzle(pState, gainExpFn) {
           drawOutline(px, py, cellSz - 2, cellSz - 2, C.cyan + '30', 1, 4);
 
           // Draw pipe based on type and rotation
-          if (pipe) {
-            const rotation = pipe.rotation || 0;
+          if (tile.type !== 0) {
+            const base = PIPE_CONNECTIONS[tile.type] || [];
+            const conn = rotatePipeConnections(base, tile.rotation);
             const cx = px + cellSz / 2 - 1;
             const cy = py + cellSz / 2 - 1;
-            ctx.save();
-            ctx.translate(cx, cy);
-            ctx.rotate(rotation * Math.PI / 2);
-            const pipeColor = pipe.connected ? C.cyan : '#4A6A8A';
+            const pipeColor = pState.waterFlowChecked && tile.onPath ? C.cyan : '#4A6A8A';
+            const armWidth = 6;
+            const armLen = cellSz / 2 - 4;
+
             ctx.fillStyle = pipeColor;
-            // Draw pipe arms based on type
-            if (pipe.type === 'straight') {
-              ctx.fillRect(-3, -cellSz / 2 + 4, 6, cellSz - 8);
-            } else if (pipe.type === 'corner') {
-              ctx.fillRect(-3, -3, 6, cellSz / 2 - 2);
-              ctx.fillRect(-3, -3, cellSz / 2 - 2, 6);
-            } else if (pipe.type === 't_junction') {
-              ctx.fillRect(-3, -cellSz / 2 + 4, 6, cellSz - 8);
-              ctx.fillRect(-3, -3, cellSz / 2 - 2, 6);
-            } else if (pipe.type === 'cross') {
-              ctx.fillRect(-3, -cellSz / 2 + 4, 6, cellSz - 8);
-              ctx.fillRect(-cellSz / 2 + 4, -3, cellSz - 8, 6);
-            }
-            ctx.restore();
+            // Center dot
+            ctx.fillRect(cx - armWidth / 2, cy - armWidth / 2, armWidth, armWidth);
+            // Draw arms to connected sides: [top, right, bottom, left]
+            if (conn[0]) ctx.fillRect(cx - armWidth / 2, cy - armLen, armWidth, armLen - armWidth / 2); // top
+            if (conn[1]) ctx.fillRect(cx + armWidth / 2, cy - armWidth / 2, armLen - armWidth / 2, armWidth); // right
+            if (conn[2]) ctx.fillRect(cx - armWidth / 2, cy + armWidth / 2, armWidth, armLen - armWidth / 2); // bottom
+            if (conn[3]) ctx.fillRect(cx - armLen, cy - armWidth / 2, armLen - armWidth / 2, armWidth); // left
           }
 
           // Click to rotate
-          if (isHovered && mouse.clicked && pipe) {
-            pipe.rotation = ((pipe.rotation || 0) + 1) % 4;
-            playSound('dialog');
-            // Check if solved after rotation
-            if (pState.checkSolved && pState.checkSolved()) {
-              pState.solved = true; playSound('puzzle');
-            }
+          if (isHovered && mouse.clicked && tile.type !== 0) {
+            waterRotateTile(c, r);
           }
         }
       }
 
-      // Submit check
-      drawRect(GAME_W / 2 - 50, gStartY + pGridH * cellSz + 15, 100, 30, C.gold + '20', 4);
-      drawText('Cek', GAME_W / 2, gStartY + pGridH * cellSz + 30, 12, C.gold, 'center');
-      if (mouse.clicked && mouse.x >= GAME_W / 2 - 50 && mouse.x <= GAME_W / 2 + 50 &&
-          mouse.y >= gStartY + pGridH * cellSz + 15 && mouse.y <= gStartY + pGridH * cellSz + 45) {
-        if (pState.checkSolved && pState.checkSolved()) {
-          pState.solved = true; playSound('puzzle');
-        } else {
-          pState.failed = true; pState.failTimer = 0; playSound('damage');
-        }
+      // Check Flow button
+      const checkBtnX = GAME_W / 2 - 55;
+      const checkBtnY = gStartY + size * cellSz + 20;
+      const checkHovered = mouse.x >= checkBtnX && mouse.x <= checkBtnX + 110 && mouse.y >= checkBtnY && mouse.y <= checkBtnY + 30;
+      drawRect(checkBtnX, checkBtnY, 110, 30, checkHovered ? C.gold + '40' : C.gold + '20', 4);
+      drawText('Cek Aliran', checkBtnX + 55, checkBtnY + 15, 12, C.gold, 'center');
+      if ((checkHovered && mouse.clicked) || justPressed('Enter')) {
+        waterCheckFlow();
+      }
+
+      // Wrong attempts
+      if (pState.wrongAttempts > 0) {
+        drawText(`Kesalahan: ${pState.wrongAttempts}/5`, GAME_W / 2, checkBtnY + 45, 11, C.red + '80', 'center');
       }
       break;
     }
 
+    // =========== DEWATA RIDDLE ===========
     case 'dewata_riddle': {
-      // Dewata Riddle — multiple choice riddle
-      const riddle = pState.riddle || '...';
-      const choices = pState.choices || [];
+      const cfg = pState.config;
+      const riddle = cfg.riddles[pState.currentRiddle];
 
       drawText('Teka-teki Dewata', GAME_W / 2, 145, 14, C.goldLight, 'center');
+      drawText(`Round ${pState.currentRiddle + 1}/${cfg.riddles.length}`, GAME_W / 2, 165, 11, C.textDim, 'center');
 
-      // Riddle text (word wrap manually)
-      const words = riddle.split(' ');
+      // Show round result feedback
+      if (pState.showRoundResult) {
+        if (pState.roundResultCorrect) {
+          drawText('BENAR!', GAME_W / 2, 240, 18, C.green, 'center');
+        } else {
+          drawText('SALAH!', GAME_W / 2, 240, 18, C.red, 'center');
+          drawText(`Petunjuk: ${riddle.hint}`, GAME_W / 2, 270, 11, C.goldLight, 'center');
+        }
+        break;
+      }
+
+      // Riddle text (word wrap)
+      const words = riddle.question.split(' ');
       let line = '';
-      let lineY = 180;
+      let lineY = 195;
       words.forEach(word => {
         const testLine = line + word + ' ';
         if (testLine.length > 35) {
@@ -1803,56 +1913,42 @@ export function drawPuzzle(pState, gainExpFn) {
       });
       if (line) drawText(line, GAME_W / 2, lineY, 13, C.text, 'center');
 
+      // Hint
+      const hintY = lineY + 22;
+      if (pState.showHint) {
+        drawText(`Petunjuk: ${riddle.hint}`, GAME_W / 2, hintY, 11, C.goldLight, 'center');
+      }
+      drawText('[H] Petunjuk', GAME_W / 2, hintY + (pState.showHint ? 18 : 0), 10, C.textDim, 'center');
+      if (justPressed('KeyH')) {
+        riddleToggleHint();
+      }
+
       // Choices
-      const choiceStartY = lineY + 40;
-      for (let i = 0; i < choices.length; i++) {
-        const cy = choiceStartY + i * 45;
-        const choiceW = 400;
+      const choiceStartY = hintY + (pState.showHint ? 38 : 20);
+      const labels = ['A', 'B', 'C', 'D'];
+      for (let i = 0; i < riddle.options.length; i++) {
+        const cy = choiceStartY + i * 38;
+        const choiceW = 380;
         const choiceX = GAME_W / 2 - choiceW / 2;
-        const isHovered = mouse.x >= choiceX && mouse.x <= choiceX + choiceW && mouse.y >= cy && mouse.y <= cy + 38;
-        drawRect(choiceX, cy, choiceW, 38, isHovered ? C.gold + '20' : '#1A1A0A', 6);
-        drawOutline(choiceX, cy, choiceW, 38, isHovered ? C.gold + '60' : C.gold + '20', 1, 6);
-        drawText(choices[i], GAME_W / 2, cy + 19, 13, isHovered ? C.gold : C.text, 'center');
+        const isHovered = mouse.x >= choiceX && mouse.x <= choiceX + choiceW && mouse.y >= cy && mouse.y <= cy + 32;
+        const isSelected = pState.selectedAnswer === i;
+        drawRect(choiceX, cy, choiceW, 32, isHovered ? C.gold + '20' : (isSelected ? C.gold + '15' : '#1A1a0A'), 6);
+        drawOutline(choiceX, cy, choiceW, 32, isHovered ? C.gold + '60' : C.gold + '20', 1, 6);
+        drawText(`${labels[i]}. ${riddle.options[i]}`, GAME_W / 2, cy + 16, 13, isHovered ? C.gold : C.text, 'center');
         if (isHovered && mouse.clicked) {
-          playSound('dialog');
-          if (i === pState.correctChoice) {
-            pState.solved = true; playSound('puzzle');
-          } else {
-            pState.failed = true; pState.failTimer = 0; playSound('damage');
-          }
+          riddleSelectAnswer(i);
         }
+      }
+
+      // Wrong attempts
+      if (pState.wrongAttempts > 0) {
+        drawText(`Kesalahan: ${pState.wrongAttempts}/3`, GAME_W / 2, choiceStartY + riddle.options.length * 38 + 10, 11, C.red + '80', 'center');
       }
       break;
     }
 
-    case 'gamelan_sequence':
     default: {
-      // Gamelan Sequence — original symbol memory puzzle
-      if (pState.showingSequence) {
-        pState.showTimer++;
-        if (pState.showTimer > 40) { pState.showTimer = 0; pState.showIndex++; if (pState.showIndex >= pState.sequence.length) pState.showingSequence = false; }
-        if (pState.showIndex < pState.sequence.length) {
-          drawText(pState.symbols[pState.sequence[pState.showIndex]], GAME_W / 2, 240, 60, '#fff', 'center');
-          drawText(`Urutan ${pState.showIndex + 1}/${pState.sequence.length}`, GAME_W / 2, 290, 14, C.textDim, 'center');
-        }
-      } else {
-        pState.buttons.forEach((btn, i) => {
-          const isHighlighted = pState.highlight === i;
-          const isHovered = mouse.x >= btn.x && mouse.x <= btn.x + btn.w && mouse.y >= btn.y && mouse.y <= btn.y + btn.h;
-          drawRect(btn.x, btn.y, btn.w, btn.h, isHighlighted ? C.gold + '40' : (isHovered ? C.gold + '20' : '#1A1A0A'), 8);
-          drawOutline(btn.x, btn.y, btn.w, btn.h, isHighlighted ? C.gold : C.gold + '30', 2, 8);
-          drawText(btn.symbol, btn.x + btn.w / 2, btn.y + btn.h / 2 - 5, 28, '#fff', 'center');
-          if ((isHovered && mouse.clicked) || justPressed(`Digit${i + 1}`)) {
-            pState.highlight = i; pState.highlightTimer = 15;
-            pState.playerSeq.push(i); playSound('dialog');
-            const idx = pState.playerSeq.length - 1;
-            if (pState.playerSeq[idx] !== pState.sequence[idx]) { pState.failed = true; pState.failTimer = 0; playSound('damage'); }
-            else if (pState.playerSeq.length === pState.sequence.length) { pState.solved = true; playSound('puzzle'); }
-          }
-        });
-        if (pState.highlightTimer > 0) { pState.highlightTimer--; if (pState.highlightTimer <= 0) pState.highlight = -1; }
-        drawText(`Urutan: ${pState.playerSeq.length}/${pState.sequence.length}`, GAME_W / 2, 360, 14, C.text, 'center');
-      }
+      drawText('Puzzle type not implemented', GAME_W / 2, 240, 16, C.red, 'center');
       break;
     }
   }
