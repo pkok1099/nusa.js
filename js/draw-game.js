@@ -1918,48 +1918,107 @@ export function drawBossIntro(tileMap) {
   return null;
 }
 
-// ---- GAME OVER ----
+// ---- GAME OVER / RESPAWN MENU ----
 let gameOverTimer = 0;
-export function resetGameOverTimer() { gameOverTimer = 0; }
+let respawnSelection = 0;
+const respawnItems = ['Bangkit Kembali', 'Menu Utama'];
+export function resetGameOverTimer() { gameOverTimer = 0; respawnSelection = 0; }
 
 export function drawGameOver(deathCount) {
   const ctx = getCtx();
   gameOverTimer++;
   const fadeAlpha = Math.min(1, gameOverTimer / 60);
-  drawRect(0, 0, GAME_W, GAME_H, `rgba(0,0,0,${fadeAlpha * 0.85})`);
+  drawRect(0, 0, GAME_W, GAME_H, `rgba(0,0,0,${fadeAlpha * 0.9})`);
+
+  // Phase 1: "YOU DIED" text appears dramatically (0-60 frames)
   if (gameOverTimer > 20) {
     const textAlpha = Math.min(1, (gameOverTimer - 20) / 80);
     ctx.globalAlpha = textAlpha;
-    drawText('KAMU MATI', GAME_W / 2, GAME_H / 2 - 40, 48, C.red, 'center');
-    drawText(`Kematian ke-${deathCount}`, GAME_W / 2, GAME_H / 2 + 10, 14, C.textDim, 'center');
+    // Blood-red glow behind text
+    const glowPulse = Math.sin(gameOverTimer * 0.05) * 0.15 + 0.25;
+    ctx.fillStyle = `rgba(120, 0, 0, ${glowPulse * textAlpha})`;
+    ctx.fillRect(0, GAME_H / 2 - 80, GAME_W, 120);
+
+    drawText('KAMU MATI', GAME_W / 2, GAME_H / 2 - 50, 52, C.red, 'center');
+    drawText(`Kematian ke-${deathCount}`, GAME_W / 2, GAME_H / 2, 14, C.textDim, 'center');
+
     // Death penalty display
     if (player.lastLostRupiah > 0) {
-      drawText(`Rupiah hilang: -${player.lastLostRupiah}`, GAME_W / 2, GAME_H / 2 + 32, 14, C.red + 'CC', 'center');
+      drawText(`Rupiah hilang: -${player.lastLostRupiah}`, GAME_W / 2, GAME_H / 2 + 22, 14, C.red + 'CC', 'center');
     }
     // Souls-like v0.7.1: Hollowing warning
     if (player.hollowing > 0) {
-      drawText(`Hollowing: ${player.hollowing}/${HOLLOWING_MAX_LEVEL}`, GAME_W / 2, GAME_H / 2 + 50, 12, C.textDim, 'center');
+      drawText(`Hollowing: ${player.hollowing}/${HOLLOWING_MAX_LEVEL}`, GAME_W / 2, GAME_H / 2 + 40, 12, C.textDim, 'center');
       if (player.hollowing >= 5) {
-        drawText('Semakin Hollow...', GAME_W / 2, GAME_H / 2 + 68, 11, C.red + '80', 'center');
+        drawText('Semakin Hollow...', GAME_W / 2, GAME_H / 2 + 56, 11, C.red + '80', 'center');
       }
     }
     // Souls-like v0.7.1: Bloodstain direction hint
     if (player.bloodstain) {
       const bsDx = player.bloodstain.x - player.checkpoint.x;
       const direction = bsDx > 50 ? '>>>' : bsDx < -50 ? '<<<' : 'dekat';
-      drawText(`Darah: ${direction} (+${player.bloodstain.rupiah}R)`, GAME_W / 2, GAME_H / 2 + 85, 11, C.red + '80', 'center');
+      drawText(`Darah: ${direction} (+${player.bloodstain.rupiah}R)`, GAME_W / 2, GAME_H / 2 + 72, 11, C.red + '80', 'center');
     }
     ctx.globalAlpha = 1;
   }
+
+  // Phase 2: Respawn menu appears (after 90 frames)
   if (gameOverTimer > 90) {
-    const optAlpha = Math.min(1, (gameOverTimer - 90) / 30);
-    ctx.globalAlpha = optAlpha;
-    drawText('[SPACE] Bangkit Kembali', GAME_W / 2, GAME_H / 2 + 55, 14, C.gold, 'center');
-    drawText('[ESC] Menu Utama', GAME_W / 2, GAME_H / 2 + 80, 12, C.textDim, 'center');
+    const menuAlpha = Math.min(1, (gameOverTimer - 90) / 30);
+    ctx.globalAlpha = menuAlpha;
+
+    // Respawn menu panel
+    const panelW = 340, panelH = 180;
+    const panelX = GAME_W / 2 - panelW / 2;
+    const panelY = GAME_H / 2 + 50;
+    drawRect(panelX, panelY, panelW, panelH, '#0A0A0AF0', 8);
+    drawOutline(panelX, panelY, panelW, panelH, C.red + '60', 2, 8);
+
+    // Decorative line
+    ctx.strokeStyle = C.red + '30'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(panelX + 20, panelY + 10); ctx.lineTo(panelX + panelW - 20, panelY + 10); ctx.stroke();
+
+    // Menu items
+    respawnItems.forEach((item, i) => {
+      const y = panelY + 30 + i * 65;
+      const isSelected = i === respawnSelection;
+      const itemW = 260, itemH = 50;
+      const itemX = GAME_W / 2 - itemW / 2;
+
+      if (isSelected) {
+        drawRect(itemX, y, itemW, itemH, C.red + '15', 6);
+        drawOutline(itemX, y, itemW, itemH, C.gold + '60', 2, 6);
+        drawText('◆', itemX - 16, y + itemH / 2, 12, C.gold, 'center');
+
+        if (i === 0) {
+          drawText(item, GAME_W / 2, y + 18, 16, C.gold, 'center');
+          drawText('Bangkit di bonfire terakhir', GAME_W / 2, y + 36, 9, C.textDim, 'center');
+        } else {
+          drawText(item, GAME_W / 2, y + 18, 16, C.textDim, 'center');
+          drawText('Kembali ke layar judul', GAME_W / 2, y + 36, 9, C.textDim + '80', 'center');
+        }
+      } else {
+        drawText(item, GAME_W / 2, y + 18, 14, C.textDim, 'center');
+      }
+    });
+
+    // Navigation hints
+    drawText('↑↓ Pilih  |  ENTER/SPACE Konfirmasi', GAME_W / 2, panelY + panelH - 12, 9, C.textDim + '80', 'center');
+
     ctx.globalAlpha = 1;
+
+    // Navigation
+    if (justPressed('ArrowUp') || justPressed('KeyW'))
+      respawnSelection = (respawnSelection - 1 + respawnItems.length) % respawnItems.length;
+    if (justPressed('ArrowDown') || justPressed('KeyS'))
+      respawnSelection = (respawnSelection + 1) % respawnItems.length;
+
+    if (justPressed('Space') || justPressed('Enter')) {
+      if (respawnSelection === 0) return 'respawn';
+      if (respawnSelection === 1) return 'menu';
+    }
   }
-  if (justPressed('Space') && gameOverTimer > 90) return 'respawn';
-  if (justPressed('Escape') && gameOverTimer > 90) return 'menu';
+
   return null;
 }
 
