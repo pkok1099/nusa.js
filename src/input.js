@@ -32,13 +32,13 @@ export function setupInput(canvas) {
 
   window.addEventListener('keyup', e => { keys[e.code] = false; });
 
-  canvas.addEventListener('mousemove', e => {
+  window.addEventListener('mousemove', e => {
     const r = canvas.getBoundingClientRect();
     mouse.x = (e.clientX - r.left) * (GAME_W / r.width);
     mouse.y = (e.clientY - r.top) * (GAME_H / r.height);
   });
 
-  canvas.addEventListener('click', () => {
+  window.addEventListener('click', () => {
     mouse.clicked = true;
     initAudio();
   });
