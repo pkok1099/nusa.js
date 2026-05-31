@@ -59,11 +59,8 @@ export function stepWorld() {
   // Clear previous collision events
   collisionEvents.length = 0;
 
-  // Step the simulation
+  // Step the simulation — this computes all contacts/intersections
   world.step();
-
-  // Collect intersection events from contact pairs
-  world.contactsWith(0, () => {}); // Force contact computation
 
   // Query all intersection pairs between hitbox and hurtbox groups
   collectCollisionEvents();
@@ -76,32 +73,45 @@ export function stepWorld() {
 function collectCollisionEvents() {
   if (!world) return;
 
-  // Use intersection queries: check all hitbox colliders vs hurtbox colliders
-  // Player hitbox → Enemy hurtbox
-  // Enemy hitbox → Player hurtbox
+  // Strategy: for each entity with an active hitbox, check all other entities'
+  // hurtboxes for intersection using world.intersectionPairsWith().
+  //
+  // Rapier 0.14 API:
+  //   world.intersectionPairsWith(collider, callback) — iterates all
+  //   intersection pairs involving the given collider.
+  //
+  // Note: both hitbox and hurtbox are sensor colliders. In Rapier 0.14,
+  // sensor-sensor intersections ARE detected when collision groups overlap.
+
   for (const [key, data] of bodies) {
-    if (!data.hitbox || !data.hitboxActive) continue;
+    if (!data.hitboxActive) continue;
 
     const hitboxCollider = world.getCollider(data.hitbox);
     if (!hitboxCollider) continue;
 
-    // Query intersections with this hitbox
-    world.intersectionPairsWith(hitboxCollider, (otherCollider) => {
-      const otherHandle = otherCollider.handle;
+    // Query intersections with this hitbox collider
+    try {
+      world.intersectionPairsWith(hitboxCollider, (otherCollider) => {
+        const otherHandle = otherCollider.handle;
 
-      // Find which entity owns this other collider
-      for (const [otherKey, otherData] of bodies) {
-        if (otherData.hurtbox === otherHandle) {
-          // Found: hitbox of `key` overlaps hurtbox of `otherKey`
-          collisionEvents.push({
-            attacker: key,
-            victim: otherKey,
-            type: 'hitbox_hurtbox',
-          });
-          break; // One event per pair per frame
+        // Find which entity owns this other collider (check hurtbox, body collider)
+        for (const [otherKey, otherData] of bodies) {
+          if (otherKey === key) continue; // Skip self
+          if (otherData.hurtbox === otherHandle) {
+            collisionEvents.push({
+              attacker: key,
+              victim: otherKey,
+              type: 'hitbox_hurtbox',
+            });
+            break; // One event per pair per frame
+          }
         }
-      }
-    });
+      });
+    } catch (err) {
+      // Graceful fallback — if intersectionPairsWith fails for any reason,
+      // don't crash the game loop. Combat still works via game.js distance checks.
+      console.warn('[Rapier] intersectionPairsWith error:', err.message);
+    }
   }
 }
 
