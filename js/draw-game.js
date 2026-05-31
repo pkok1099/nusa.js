@@ -200,20 +200,34 @@ export function drawLevel(tileMap) {
         ctx.fillStyle = C.gold + '10';
         ctx.fillRect(sx + 8, sy + 8, TILE - 16, TILE - 16);
       } else if (tile === 9) {
-        // Checkpoint
-        const glowIntensity = Math.sin(gameTime * 0.08) * 0.3 + 0.7;
-        ctx.fillStyle = `rgba(212, 175, 55, ${glowIntensity * 0.15})`;
-        ctx.fillRect(sx - 4, sy - 4, TILE + 8, TILE + 8);
-        ctx.fillStyle = `rgba(212, 175, 55, ${glowIntensity * 0.25})`;
-        ctx.fillRect(sx - 2, sy - 2, TILE + 4, TILE + 4);
-        drawRect(sx + 4, sy + 8, TILE - 8, TILE - 8, C.goldDark);
-        drawRect(sx + 6, sy + 10, TILE - 12, TILE - 12, C.gold);
-        const flameH = 6 + Math.sin(gameTime * 0.15) * 3;
-        ctx.fillStyle = C.goldLight + 'CC';
-        ctx.beginPath(); ctx.arc(sx + TILE / 2, sy + 6, 4, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = C.gold + '80';
-        ctx.beginPath(); ctx.arc(sx + TILE / 2, sy + 4 - flameH / 3, 3, 0, Math.PI * 2); ctx.fill();
-        if (gameTime % 20 === 0) spawnParticle(sx + TILE / 2 + camera.x, sy + camera.y, C.goldLight, 1, 1, 20);
+        // Checkpoint / Bonfire — visual depends on lit/unlit state
+        const bonfireKey = `${currentStageId}_${tx}_${ty}`;
+        const isLit = player.activatedBonfires && player.activatedBonfires.has(bonfireKey);
+        if (isLit) {
+          // Lit bonfire — bright flame with glow
+          const glowIntensity = Math.sin(gameTime * 0.08) * 0.3 + 0.7;
+          ctx.fillStyle = `rgba(212, 175, 55, ${glowIntensity * 0.15})`;
+          ctx.fillRect(sx - 4, sy - 4, TILE + 8, TILE + 8);
+          ctx.fillStyle = `rgba(212, 175, 55, ${glowIntensity * 0.25})`;
+          ctx.fillRect(sx - 2, sy - 2, TILE + 4, TILE + 4);
+          drawRect(sx + 4, sy + 8, TILE - 8, TILE - 8, C.goldDark);
+          drawRect(sx + 6, sy + 10, TILE - 12, TILE - 12, C.gold);
+          const flameH = 6 + Math.sin(gameTime * 0.15) * 3;
+          ctx.fillStyle = C.goldLight + 'CC';
+          ctx.beginPath(); ctx.arc(sx + TILE / 2, sy + 6, 4, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = C.gold + '80';
+          ctx.beginPath(); ctx.arc(sx + TILE / 2, sy + 4 - flameH / 3, 3, 0, Math.PI * 2); ctx.fill();
+          if (gameTime % 20 === 0) spawnParticle(sx + TILE / 2 + camera.x, sy + camera.y, C.goldLight, 1, 1, 20);
+        } else {
+          // Unlit bonfire — dark, no flame, just embers
+          ctx.fillStyle = 'rgba(100, 80, 50, 0.08)';
+          ctx.fillRect(sx - 2, sy - 2, TILE + 4, TILE + 4);
+          drawRect(sx + 4, sy + 8, TILE - 8, TILE - 8, '#3A2A1A');
+          drawRect(sx + 6, sy + 10, TILE - 12, TILE - 12, '#4A3A2A');
+          // Dim ember dot — no animated flame
+          ctx.fillStyle = '#6A4A2A40';
+          ctx.beginPath(); ctx.arc(sx + TILE / 2, sy + 8, 2, 0, Math.PI * 2); ctx.fill();
+        }
       } else if (tile === 10) {
         // Puzzle door — ornate archway with glow
         const doorPulse = Math.sin(gameTime * 0.06) * 0.3 + 0.7;
@@ -1374,83 +1388,6 @@ export function drawShop() {
   return null;
 }
 
-// ---- STAGE SELECT ----
-let stageSelectScroll = 0;
-
-export function drawStageSelect(unlockedStages) {
-  const ctx = getCtx();
-  const grad = ctx.createLinearGradient(0, 0, 0, GAME_H);
-  grad.addColorStop(0, '#0A0A0A'); grad.addColorStop(0.5, '#0D0A1A'); grad.addColorStop(1, '#0A0A0A');
-  ctx.fillStyle = grad; ctx.fillRect(0, 0, GAME_W, GAME_H);
-
-  // Floating particles
-  for (let i = 0; i < 20; i++) {
-    const x = (i * 137 + gameTime * 0.3) % GAME_W;
-    const y = (i * 97 + gameTime * 0.2) % GAME_H;
-    ctx.fillStyle = C.gold + '30'; ctx.fillRect(x, y, 2, 2);
-  }
-
-  drawText('PILIH TAHAP', GAME_W / 2, 40, 28, C.gold, 'center');
-  drawText(`Rupiah: ${player.rupiah}  |  Level: ${player.level}  |  Artefak: ${player.artifacts}/5`, GAME_W / 2, 70, 12, C.goldLight + '80', 'center');
-
-  // Shop button
-  drawRect(GAME_W - 150, 20, 120, 35, C.gold + '20', 6);
-  drawOutline(GAME_W - 150, 20, 120, 35, C.gold + '60', 1, 6);
-  drawText('Toko', GAME_W - 90, 37, 14, C.gold, 'center');
-  if (mouse.clicked && mouse.x >= GAME_W - 150 && mouse.x <= GAME_W - 30 && mouse.y >= 20 && mouse.y <= 55) {
-    return { action: 'shop' };
-  }
-
-  // Stage cards
-  // BUG FIX v0.7.1: Use for-loop instead of forEach so return exits drawStageSelect.
-  // Previously, return inside forEach only exited the callback, never reaching game.js.
-  let stageResult = null;
-  for (let i = 0; i < STAGES.length; i++) {
-    const stage = STAGES[i];
-    const cx = 60 + (i % 3) * 290;
-    const cy = 100 + Math.floor(i / 3) * 180;
-    const isUnlocked = unlockedStages[i];
-    const isSelected = mouse.x >= cx && mouse.x <= cx + 270 && mouse.y >= cy && mouse.y <= cy + 160;
-
-    drawRect(cx, cy, 270, 160, isUnlocked ? (isSelected ? stage.bg2 + 'CC' : stage.bg2 + '80') : '#1A1A1A', 8);
-    drawOutline(cx, cy, 270, 160, isUnlocked ? C.gold + '40' : C.gold + '15', 2, 8);
-
-    if (isUnlocked) {
-      drawText(stage.name, cx + 135, cy + 30, 18, C.gold, 'center');
-      drawText(stage.subtitle, cx + 135, cy + 52, 10, C.textDim, 'center');
-      drawText(`Boss: ${stage.bossName}`, cx + 135, cy + 78, 11, C.red + '80', 'center');
-      drawText(`HP Boss: ${stage.bossHp}`, cx + 135, cy + 96, 10, C.textDim, 'center');
-      drawText(`Artefak: ${stage.artifact}`, cx + 135, cy + 116, 10, C.goldLight + '80', 'center');
-
-      // Stage color accent
-      ctx.fillStyle = stage.bg1 + '40';
-      ctx.fillRect(cx + 4, cy + 130, 262, 26);
-
-      if (isSelected && mouse.clicked) {
-        stageResult = { action: 'select', stageId: i };
-        break;
-      }
-    } else {
-      drawText('TERKUNCI', cx + 135, cy + 60, 20, C.textDim, 'center');
-      drawText('Kalahkan boss sebelumnya', cx + 135, cy + 90, 10, C.textDim, 'center');
-      // Lock icon
-      drawRect(cx + 125, cy + 105, 20, 20, C.stoneDark + '60');
-      drawRect(cx + 128, cy + 115, 14, 10, C.stone + '40');
-    }
-  }
-
-  // Back button
-  drawRect(GAME_W / 2 - 60, GAME_H - 45, 120, 30, C.gold + '15', 6);
-  drawOutline(GAME_W / 2 - 60, GAME_H - 45, 120, 30, C.gold + '30', 1, 6);
-  drawText('[ESC] Menu', GAME_W / 2, GAME_H - 30, 11, C.gold, 'center');
-
-  if (justPressed('Escape')) {
-    return { action: 'menu' };
-  }
-
-  return stageResult;
-}
-
 // ---- MENU ----
 let menuSelection = 0;
 let menuItems = ['Mulai Baru', 'Lanjutkan', 'Kontrol', 'Tentang'];
@@ -2098,7 +2035,7 @@ export function drawLevelUp() {
 // ---- PAUSE MENU (in-game, triggered by ESC) ----
 let pauseSelection = 0;
 let pauseShowControls = false;
-const pauseItems = ['Lanjutkan', 'Perjalanan Cepat', 'Kontrol', 'Menu Utama'];
+const pauseItems = ['Lanjutkan', 'Kontrol', 'Menu Utama'];
 
 export function drawPauseMenu() {
   const ctx = getCtx();
@@ -2181,9 +2118,6 @@ export function drawPauseMenu() {
     if (selected === 'Lanjutkan') {
       pauseSelection = 0;
       return { action: 'resume' };
-    } else if (selected === 'Perjalanan Cepat') {
-      pauseSelection = 0;
-      return { action: 'travel' };
     } else if (selected === 'Kontrol') {
       pauseShowControls = true;
     } else if (selected === 'Menu Utama') {
@@ -2195,21 +2129,23 @@ export function drawPauseMenu() {
   return null;
 }
 
-// ---- MAP SELECT (Replaces drawStageSelect for the new map system) ----
-export function drawMapSelect(unlockedMaps, clearedMaps) {
+// ---- BONFIRE TRAVEL (Souls-like fast travel from bonfires) ----
+export function drawBonfireTravel(unlockedMaps, clearedMaps) {
   const ctx = getCtx();
   const grad = ctx.createLinearGradient(0, 0, 0, GAME_H);
-  grad.addColorStop(0, '#0A0A0A'); grad.addColorStop(0.5, '#0D0A1A'); grad.addColorStop(1, '#0A0A0A');
+  grad.addColorStop(0, '#0A0A0A'); grad.addColorStop(0.5, '#1A0A0A'); grad.addColorStop(1, '#0A0A0A');
   ctx.fillStyle = grad; ctx.fillRect(0, 0, GAME_W, GAME_H);
 
-  // Floating particles
-  for (let i = 0; i < 20; i++) {
+  // Floating ember particles (bonfire-themed)
+  for (let i = 0; i < 25; i++) {
     const x = (i * 137 + gameTime * 0.3) % GAME_W;
     const y = (i * 97 + gameTime * 0.2) % GAME_H;
-    ctx.fillStyle = C.gold + '30'; ctx.fillRect(x, y, 2, 2);
+    const emberAlpha = Math.sin(gameTime * 0.05 + i) * 0.3 + 0.4;
+    ctx.fillStyle = C.gold + Math.floor(emberAlpha * 255).toString(16).padStart(2, '0');
+    ctx.fillRect(x, y, 2, 2);
   }
 
-  drawText('PERJALANAN CEPAT', GAME_W / 2, 40, 24, C.gold, 'center');
+  drawText('PERJALANAN BONFIRE', GAME_W / 2, 40, 24, C.gold, 'center');
   drawText(`Rupiah: ${player.rupiah}  |  Level: ${player.level}  |  Artefak: ${player.artifacts}/5`, GAME_W / 2, 70, 12, C.goldLight + '80', 'center');
 
   // Current map indicator
@@ -2381,6 +2317,8 @@ export function drawInteractionLabels(tileMap) {
     }
   } else if (nearby.type === 'puzzleDoor') {
     drawText('[E] Puzzle', nx + 16, ny - 20, 11, C.gold, 'center');
+  } else if (nearby.type === 'litBonfire') {
+    drawText('[E] Perjalanan Bonfire', nx + 16, ny - 20, 11, C.goldLight, 'center');
   }
   ctx.globalAlpha = 1;
 }

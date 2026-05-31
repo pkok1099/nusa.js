@@ -129,6 +129,8 @@ export const player = {
   weaponArtType: null,
   // v0.8.3: Fall timer for pit detection (Souls-like: fall too long = respawn)
   fallTimer: 0,
+  // v0.9.0: Bonfire tracking — which bonfires have been lit
+  activatedBonfires: new Set(),
 };
 
 // Shared mutable state references (set from game.js)
@@ -679,6 +681,27 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
   // ==== E KEY: NPC/Puzzle/Heal ====
   if (justPressed('KeyE')) {
     let interacted = false;
+    // ---- BONFIRE TRAVEL (E key at lit bonfire) ----
+    if (!interacted) {
+      const bTx = Math.floor((player.x + player.w / 2) / 32);
+      const bTy = Math.floor((player.y + player.h) / 32);
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const tx = bTx + dx;
+          const ty = bTy + dy;
+          if (tileMap && ty >= 0 && ty < tileMap.length && tx >= 0 && tx < tileMap[0].length) {
+            if (tileMap[ty][tx] === 9) {
+              const bonfireKey = `${player.currentStageId}_${tx}_${ty}`;
+              if (player.activatedBonfires.has(bonfireKey)) {
+                // Interact with lit bonfire for fast travel
+                interacted = true;
+                return 'interactBonfire';
+              }
+            }
+          }
+        }
+      }
+    }
     entities.forEach(e => {
       if (interacted) return;
       if (e.type === 'npc') {
@@ -838,43 +861,61 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
     }
   });
 
-  // Checkpoint — Souls-like: acts as a bonfire (refills estus, heals, auto-saves)
+  // Checkpoint — Souls-like bonfire system
+  // Bonfires remain on the map (tile 9) and can be re-visited for fast travel.
+  // First activation: heal, refill estus, set checkpoint, auto-save.
+  // Pressing E at an already-lit bonfire: open bonfire travel map.
   const cptx = Math.floor((player.x + player.w / 2) / 32);
   const cpty = Math.floor((player.y + player.h) / 32);
   if (tileMap && cpty >= 0 && cpty < tileMap.length && cptx >= 0 && cptx < tileMap[0].length) {
     if (tileMap[cpty][cptx] === 9) {
-      player.checkpoint = { x: player.x, y: player.y };
-      tileMap[cpty][cptx] = 0;
-      // Souls-like v0.7.0: Bonfire checkpoint — refill estus and fully heal
-      // Souls-like v0.7.1: Cure hollowing at bonfire
-      player.hollowing = 0;
-      player.hp = effectiveMaxHp;
-      player.stamina = effectiveMaxStamina;
-      player.energy = effectiveMaxEnergy;
-      player.estus = player.estusMax;
-      // Clear status effects
-      player.poisonTimer = 0;
-      player.stunTimer = 0;
-      player.slowTimer = 0;
-      spawnFloatingText(player.x, player.y - 30, 'Bonfire! Estus Dipulihkan', C.gold);
-      spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.gold, 25, 5, 50);
-      spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.green, 15, 3, 40);
-      playSound('checkpoint');
+      const bonfireKey = `${player.currentStageId}_${cptx}_${cpty}`;
+      if (!player.activatedBonfires.has(bonfireKey)) {
+        // First activation — light the bonfire
+        player.activatedBonfires.add(bonfireKey);
+        player.checkpoint = { x: player.x, y: player.y };
+        // Don't remove the tile — bonfire stays lit
+        // Souls-like v0.7.0: Bonfire checkpoint — refill estus and fully heal
+        // Souls-like v0.7.1: Cure hollowing at bonfire
+        player.hollowing = 0;
+        player.hp = effectiveMaxHp;
+        player.stamina = effectiveMaxStamina;
+        player.energy = effectiveMaxEnergy;
+        player.estus = player.estusMax;
+        // Clear status effects
+        player.poisonTimer = 0;
+        player.stunTimer = 0;
+        player.slowTimer = 0;
+        spawnFloatingText(player.x, player.y - 30, 'Bonfire Menyala! Estus Dipulihkan', C.gold);
+        spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.gold, 25, 5, 50);
+        spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.green, 15, 3, 40);
+        playSound('checkpoint');
 
-      // Check bloodstain — recover lost Rupiah
-      if (player.bloodstain) {
-        const bDist = Math.abs(player.x - player.bloodstain.x) + Math.abs(player.y - player.bloodstain.y);
-        if (bDist < 100) {
-          player.rupiah += player.bloodstain.rupiah;
-          spawnFloatingText(player.x, player.y - 50, `+${player.bloodstain.rupiah} Rupiah (Dipulihkan)`, C.goldLight);
-          spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.goldLight, 20, 4, 40);
-          player.bloodstain = null;
-          player.lostRupiah = 0;
+        // Check bloodstain — recover lost Rupiah
+        if (player.bloodstain) {
+          const bDist = Math.abs(player.x - player.bloodstain.x) + Math.abs(player.y - player.bloodstain.y);
+          if (bDist < 100) {
+            player.rupiah += player.bloodstain.rupiah;
+            spawnFloatingText(player.x, player.y - 50, `+${player.bloodstain.rupiah} Rupiah (Dipulihkan)`, C.goldLight);
+            spawnParticle(player.x + player.w / 2, player.y + player.h / 2, C.goldLight, 20, 4, 40);
+            player.bloodstain = null;
+            player.lostRupiah = 0;
+          }
         }
-      }
 
-      // Auto-save on checkpoint
-      if (onCheckpointCallback) onCheckpointCallback();
+        // Auto-save on checkpoint
+        if (onCheckpointCallback) onCheckpointCallback();
+      }
+      // Already-lit bonfire: restore HP/estus/stamina when stepping on it
+      else {
+        // Passive restoration when standing on lit bonfire
+        if (player.hp < effectiveMaxHp) player.hp = Math.min(effectiveMaxHp, player.hp + 1);
+        if (player.stamina < effectiveMaxStamina) player.stamina = effectiveMaxStamina;
+        if (player.energy < effectiveMaxEnergy) player.energy = effectiveMaxEnergy;
+        if (player.estus < player.estusMax) player.estus = player.estusMax;
+        player.hollowing = 0;
+        player.checkpoint = { x: player.x, y: player.y };
+      }
     }
   }
 
@@ -1014,28 +1055,25 @@ function applyGravityAndCollision(tileMap) {
   }
 
   // ---- STEP 2: Apply vertical movement, then resolve vertical collisions ----
-  // v0.8.3: Dynamic V_INSET — larger when jumping UP (prevents wall-edge catching),
-  // smaller when falling DOWN (allows landing on wall/platform edges).
-  // This fixes the "gravity error" where vy gets incorrectly zeroed by
-  // wall tiles during vertical collision when the player should be landing
-  // on top of a wall/platform.
+  // v0.9.0: Improved wall-top landing detection.
+  // When jumping alongside a wall, the player should land ON TOP of the wall
+  // rather than getting their vy zeroed by a side-wall tile misidentified as ceiling.
   player.y += player.vy;
   player.grounded = false;
-  const V_INSET = player.vy < 0 ? 6 : 2;
-  const colsY = tileCollision(player.x + V_INSET, player.y, player.w - V_INSET * 2, player.h, player.prevY);
-  // Sort vertical collisions: resolve floor (bottom) first, then ceiling
-  // This prevents ceiling tiles from overriding floor grounding
-  colsY.sort((a, b) => {
-    if (a.oneway && !b.oneway) return -1; // one-way first
-    if (!a.oneway && b.oneway) return 1;
-    return a.y - b.y; // sort by Y position
-  });
+
+  // Use a narrower horizontal hitbox for vertical checks to avoid
+  // triggering collision with adjacent wall tiles
+  const V_H_SHRINK = 4; // Shrink horizontal by 4px each side for vertical checks
+  const colsY = tileCollision(player.x + V_H_SHRINK, player.y, player.w - V_H_SHRINK * 2, player.h, player.prevY);
+
+  // Separate collisions into floor hits (player bottom hitting tile top)
+  // and ceiling hits (player top hitting tile bottom)
+  let floorHit = null;
+  let ceilingHit = null;
+
   for (const c of colsY) {
     if (c.oneway) {
-      // One-way platforms: only resolve when falling down onto them.
-      // The tileCollision function already filtered these to only include
-      // platforms the player was above in the previous frame.
-      // Never push the player upward through a one-way platform.
+      // One-way platforms: only resolve when falling down onto them
       if (player.vy > 0) {
         player.y = c.y - player.h;
         player.vy = 0;
@@ -1043,32 +1081,68 @@ function applyGravityAndCollision(tileMap) {
       }
       continue;
     }
-    // Solid tile resolution — skip tiles that the player's inset hitbox
-    // doesn't actually overlap with (safety check for wall-adjacent tiles)
-    const playerLeft = player.x + V_INSET;
-    const playerRight = player.x + player.w - V_INSET;
+
+    // Check if the inset hitbox actually overlaps
+    const playerLeft = player.x + V_H_SHRINK;
+    const playerRight = player.x + player.w - V_H_SHRINK;
     if (playerRight <= c.x || playerLeft >= c.x + c.w) continue;
-    
-    if (player.vy > 0) {
-      // Falling down → push player's bottom to tile's top, set grounded
-      player.y = c.y - player.h;
-      player.vy = 0;
-      player.grounded = true;
-    } else if (player.vy < 0) {
-      // Jumping up → push player's top to tile's bottom
-      player.y = c.y + c.h;
-      player.vy = 0;
-    } else {
-      // vy is 0 but overlapping (safety net) — push to nearer edge
-      const overlapTop = (player.y + player.h) - c.y;
-      const overlapBottom = (c.y + c.h) - player.y;
-      if (overlapTop < overlapBottom) {
-        player.y = c.y - player.h;
-        player.grounded = true;
-      } else {
-        player.y = c.y + c.h;
+
+    // Determine if this is a floor or ceiling collision
+    const playerBottom = player.y + player.h;
+    const playerTop = player.y;
+    const tileTop = c.y;
+    const tileBottom = c.y + c.h;
+
+    // Floor collision: player's bottom is near tile's top, and previous bottom was above or at tile top
+    const prevBottom = player.prevY + player.h;
+    if (playerBottom > tileTop && prevBottom <= tileTop + 4 && player.vy >= 0) {
+      if (!floorHit || c.y < floorHit.y) {
+        floorHit = c;
       }
-      player.vy = 0;
+    }
+    // Ceiling collision: player's top is near tile's bottom, and previous top was below or at tile bottom
+    else if (playerTop < tileBottom && player.prevY >= tileBottom - 4 && player.vy <= 0) {
+      if (!ceilingHit || c.y + c.h > ceilingHit.y + ceilingHit.h) {
+        ceilingHit = c;
+      }
+    }
+  }
+
+  // Resolve floor first (landing takes priority over ceiling bumps)
+  if (floorHit) {
+    player.y = floorHit.y - player.h;
+    player.vy = 0;
+    player.grounded = true;
+  } else if (ceilingHit) {
+    player.y = ceilingHit.y + ceilingHit.h;
+    player.vy = 0;
+  } else {
+    // Fallback: resolve any remaining overlaps using the old method
+    for (const c of colsY) {
+      if (c.oneway) continue;
+      const playerLeft = player.x + V_H_SHRINK;
+      const playerRight = player.x + player.w - V_H_SHRINK;
+      if (playerRight <= c.x || playerLeft >= c.x + c.w) continue;
+
+      if (player.vy > 0) {
+        player.y = c.y - player.h;
+        player.vy = 0;
+        player.grounded = true;
+      } else if (player.vy < 0) {
+        player.y = c.y + c.h;
+        player.vy = 0;
+      } else {
+        const overlapTop = (player.y + player.h) - c.y;
+        const overlapBottom = (c.y + c.h) - player.y;
+        if (overlapTop < overlapBottom) {
+          player.y = c.y - player.h;
+          player.grounded = true;
+        } else {
+          player.y = c.y + c.h;
+        }
+        player.vy = 0;
+      }
+      break; // Only resolve first remaining overlap
     }
   }
 }
@@ -1423,6 +1497,10 @@ export function resetPlayer() {
     poise: PLAYER_MAX_POISE, maxPoise: PLAYER_MAX_POISE, poiseStaggerTimer: 0,
     exhausted: false, exhaustTimer: 0,
     weaponArtActive: false, weaponArtTimer: 0, weaponArtCooldown: 0, weaponArtType: null,
+    // v0.8.3 fields
+    fallTimer: 0,
+    // v0.9.0 fields
+    activatedBonfires: new Set(),
   });
 }
 
@@ -1481,6 +1559,13 @@ export function getNearbyInteractable(tileMap) {
         }
         if (tile === TILE_PUZZLE_DOOR) {
           return { type: 'puzzleDoor', x: tx * 32, y: ty * 32 };
+        }
+        // v0.9.0: Check for lit bonfire (tile 9 with activatedBonfires)
+        if (tile === 9) {
+          const bonfireKey = `${player.currentStageId}_${tx}_${ty}`;
+          if (player.activatedBonfires.has(bonfireKey)) {
+            return { type: 'litBonfire', x: tx * 32, y: ty * 32 };
+          }
         }
       }
     }

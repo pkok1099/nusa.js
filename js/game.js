@@ -27,7 +27,7 @@ import {
   drawBackground, drawLevel, drawPlayer, drawEnemies, drawBoss,
   drawItems, drawNPCs, drawPuzzleTriggers, drawParticles, drawHUD,
   drawDialog, drawMenu, drawPuzzle, drawBossIntro, drawGameOver, drawVictory,
-  drawInventory, drawShop, drawMapSelect, drawLoadingScreen, drawBossSummonEffect,
+  drawInventory, drawShop, drawBonfireTravel, drawLoadingScreen, drawBossSummonEffect,
   drawInteractionLabels, drawLevelUp, drawPauseMenu,
   setGameTime, resetBossIntroTimer, resetGameOverTimer, setCurrentStageId, setInvTab,
   showSaveIndicator, drawMiniMap, drawBloodstain,
@@ -64,7 +64,7 @@ let tileMap = [];
 let boss = null;
 let bossActive = false;
 let puzzleSolved = false;
-// Travel state: used when player fast-travels from pause menu
+// Travel state: used when player fast-travels from bonfire
 let travelTargetMap = -1;
 
 // Map system variables
@@ -189,6 +189,12 @@ function continueGame() {
   player.poise = data.player.poise !== undefined ? data.player.poise : player.maxPoise;
   // Souls-like v0.7.1: Restore hollowing
   player.hollowing = data.player.hollowing || 0;
+  // v0.9.0: Restore activated bonfires
+  if (data.player.activatedBonfires && Array.isArray(data.player.activatedBonfires)) {
+    player.activatedBonfires = new Set(data.player.activatedBonfires);
+  } else {
+    player.activatedBonfires = new Set();
+  }
   // Restore inventory
   if (data.inventory) {
     inventory.items = data.inventory.items || [];
@@ -276,16 +282,16 @@ function gameLoop() {
       break;
     }
 
-    case 'travel': {
-      // Fast travel menu (replaces mapSelect, accessible from pause menu)
-      const result = drawMapSelect(unlockedMaps, clearedMaps);
+    case 'bonfireTravel': {
+      // Bonfire travel menu (Souls-like: travel from lit bonfires)
+      const result = drawBonfireTravel(unlockedMaps, clearedMaps);
       if (result) {
         if (result.action === 'select') {
           travelTargetMap = result.mapId;
           loadingTimer = 0;
           gameState.value = 'loading';
         } else if (result.action === 'menu') {
-          gameState.value = 'paused';
+          gameState.value = 'playing';
         }
       }
       break;
@@ -345,6 +351,12 @@ function gameLoop() {
         bossSummonTimer = 0;
         gameState.value = 'bossSummon';
         playSound('boss');
+        break;
+      }
+      if (playerAction === 'interactBonfire') {
+        // Open bonfire travel map
+        travelTargetMap = -1;
+        gameState.value = 'bonfireTravel';
         break;
       }
       if (playerAction === 'interactExitDoor') {
@@ -450,9 +462,6 @@ function gameLoop() {
           // Auto-save before returning to menu
           autoSave();
           gameState.value = 'menu';
-        } else if (pauseResult.action === 'travel') {
-          // Open fast travel map selection
-          gameState.value = 'travel';
         }
       }
       break;

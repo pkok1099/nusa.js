@@ -63,6 +63,8 @@ export function saveGame(player, inventory, deathCount, currentMapId, clearedMap
         poise: player.poise,
         // Souls-like v0.7.1: Hollowing
         hollowing: player.hollowing,
+        // v0.9.0: Activated bonfires (convert Set to array for JSON)
+        activatedBonfires: player.activatedBonfires ? [...player.activatedBonfires] : [],
       },
       inventory: {
         items: inventory.items.map(item => ({ ...item })),
