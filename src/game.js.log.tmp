@@ -1,0 +1,19 @@
+<<<<<<< SEARCH
+// ---- Shared mutable state ----
+const gameState = { value: 'menu' };
+=======
+// ---- Shared mutable state ----
+const _gameStateInternal = { value: 'menu' };
+const gameState = new Proxy(_gameStateInternal, {
+  set(target, prop, value) {
+    if (prop === 'value' && target[prop] !== value) {
+      console.log(`[GAME STATE] Transition: ${target[prop]} -> ${value}`);
+    }
+    target[prop] = value;
+    return true;
+  },
+  get(target, prop) {
+    return target[prop];
+  }
+});
+>>>>>>> REPLACE

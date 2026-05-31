@@ -27,19 +27,28 @@ export function setupInput(canvas) {
 
   window.addEventListener('keydown', e => {
     keys[e.code] = true;
-    if (preventCodes.includes(e.code)) e.preventDefault();
+    if (preventCodes.includes(e.code)) {
+      e.preventDefault();
+    }
+    console.log(`[INPUT] KeyDown: ${e.code}`);
   });
 
-  window.addEventListener('keyup', e => { keys[e.code] = false; });
+  window.addEventListener('keyup', e => {
+    keys[e.code] = false;
+    console.log(`[INPUT] KeyUp: ${e.code}`);
+  });
 
-  canvas.addEventListener('mousemove', e => {
+  // Phase 5: Use window instead of canvas to avoid overlay blocking
+  // Use pointer events for better compatibility
+  window.addEventListener('pointermove', e => {
     const r = canvas.getBoundingClientRect();
     mouse.x = (e.clientX - r.left) * (GAME_W / r.width);
     mouse.y = (e.clientY - r.top) * (GAME_H / r.height);
   });
 
-  canvas.addEventListener('click', () => {
+  window.addEventListener('pointerdown', e => {
     mouse.clicked = true;
+    console.log(`[INPUT] PointerDown at screen(${e.clientX}, ${e.clientY}) -> game(${Math.round(mouse.x)}, ${Math.round(mouse.y)})`);
     initAudio();
   });
 }

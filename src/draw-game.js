@@ -511,6 +511,7 @@ export function drawMapSelect(unlockedMaps, clearedMaps) {
       const pos = stagePositions[i];
       if (unlockedMaps[i] && mouse.x >= pos.x - 50 && mouse.x <= pos.x + 50 &&
           mouse.y >= pos.y - 30 && mouse.y <= pos.y + 30) {
+        console.log(`[UI] Stage ${i} (${STAGES[i].name}) selected via click`);
         hideOverlay();
         return { action: 'select', mapId: i };
       }
@@ -518,6 +519,7 @@ export function drawMapSelect(unlockedMaps, clearedMaps) {
     // Shop
     if (mouse.x >= GAME_W / 2 - 60 && mouse.x <= GAME_W / 2 + 60 &&
         mouse.y >= 440 && mouse.y <= 470) {
+      console.log(`[UI] Shop selected via click`);
       hideOverlay();
       return { action: 'shop' };
     }
@@ -527,6 +529,13 @@ export function drawMapSelect(unlockedMaps, clearedMaps) {
   if (justPressed('Escape')) {
     hideOverlay();
     return { action: 'menu' };
+  }
+
+  // T for Shop
+  if (justPressed('KeyT')) {
+    console.log(`[UI] Shop selected via keyboard [T]`);
+    hideOverlay();
+    return { action: 'shop' };
   }
 
   renderOverlayToScreen();
