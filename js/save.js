@@ -5,7 +5,7 @@
 const SAVE_KEY = 'nusantara_save';
 
 // Save game progress to localStorage
-export function saveGame(player, inventory, unlockedStages, deathCount, currentStageId) {
+export function saveGame(player, inventory, unlockedStages, deathCount, currentStageId, clearedStages) {
   try {
     const data = {
       player: {
@@ -38,6 +38,7 @@ export function saveGame(player, inventory, unlockedStages, deathCount, currentS
         allocatedStats: { ...inventory.allocatedStats },
       },
       unlockedStages: [...unlockedStages],
+      clearedStages: [...clearedStages],
       deathCount: deathCount,
       currentStageId: currentStageId,
       savedAt: Date.now(),

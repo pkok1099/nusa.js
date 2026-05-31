@@ -1459,7 +1459,7 @@ export function drawMenu() {
     drawText('[ESC] Kembali', GAME_W / 2, GAME_H - 110, 12, C.textDim, 'center');
   }
 
-  drawText('v0.6.2 — Bug Fix Patch', GAME_W / 2, GAME_H - 30, 9, C.textDim, 'center');
+  drawText('v0.7.4 — Pause Menu & Bug Fixes', GAME_W / 2, GAME_H - 30, 9, C.textDim, 'center');
 
   if (justPressed('ArrowUp') || justPressed('KeyW')) menuSelection = (menuSelection - 1 + menuItems.length) % menuItems.length;
   if (justPressed('ArrowDown') || justPressed('KeyS')) menuSelection = (menuSelection + 1) % menuItems.length;
@@ -1670,5 +1670,102 @@ export function drawLevelUp() {
   if (justPressed('Escape') || justPressed('Tab') || justPressed('Space')) {
     return { action: 'close' };
   }
+  return null;
+}
+
+// ---- PAUSE MENU (in-game, triggered by ESC) ----
+let pauseSelection = 0;
+let pauseShowControls = false;
+const pauseItems = ['Lanjutkan', 'Kontrol', 'Menu Utama'];
+
+export function drawPauseMenu() {
+  const ctx = getCtx();
+
+  // Dim background (game world already drawn behind)
+  drawRect(0, 0, GAME_W, GAME_H, '#000000AA');
+
+  // Panel
+  const panelW = 360, panelH = 340;
+  const panelX = GAME_W / 2 - panelW / 2, panelY = GAME_H / 2 - panelH / 2;
+  drawRect(panelX, panelY, panelW, panelH, '#0A0A0AF0', 10);
+  drawOutline(panelX, panelY, panelW, panelH, C.gold + '50', 2, 10);
+
+  // Title
+  drawText('JEDA', GAME_W / 2, panelY + 40, 28, C.gold, 'center');
+  // Decorative line
+  ctx.strokeStyle = C.gold + '30'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(panelX + 40, panelY + 55); ctx.lineTo(panelX + panelW - 40, panelY + 55); ctx.stroke();
+
+  if (pauseShowControls) {
+    // Controls sub-screen
+    drawText('KONTROL', GAME_W / 2, panelY + 80, 18, C.gold, 'center');
+    const ctrls = [
+      ['W / ↑', 'Lompat'],
+      ['A D / ← →', 'Gerak kiri/kanan'],
+      ['SPACE', 'Serang Ringan (Combo 3x)'],
+      ['F', 'Serang Berat'],
+      ['R', 'Parry / Menangkis'],
+      ['SHIFT', 'Dodge / Berguling'],
+      ['Q', 'Skill Spesial'],
+      ['E', 'Estus / Interaksi'],
+      ['G', 'Seni Senjata (Weapon Art)'],
+      ['H', 'Dua Tangan (Two-Hand)'],
+      ['TAB / I', 'Buka Inventori'],
+      ['ESC', 'Jeda / Kembali'],
+    ];
+    ctrls.forEach((c, i) => {
+      drawText(c[0], panelX + 30, panelY + 105 + i * 18, 9, C.gold, 'left');
+      drawText(c[1], panelX + 160, panelY + 105 + i * 18, 9, C.text, 'left');
+    });
+    drawText('[ESC] Kembali', GAME_W / 2, panelY + panelH - 25, 11, C.textDim, 'center');
+  } else {
+    // Main pause menu items
+    pauseItems.forEach((item, i) => {
+      const y = panelY + 80 + i * 60;
+      const isSelected = i === pauseSelection;
+      const itemW = 240, itemH = 44;
+      const itemX = GAME_W / 2 - itemW / 2;
+
+      if (isSelected) {
+        drawRect(itemX, y, itemW, itemH, C.gold + '18', 6);
+        drawOutline(itemX, y, itemW, itemH, C.gold + '60', 2, 6);
+        drawText('◆', itemX - 18, y + itemH / 2, 12, C.gold, 'center');
+        drawText(item, GAME_W / 2, y + itemH / 2, 16, C.gold, 'center');
+      } else {
+        drawText(item, GAME_W / 2, y + itemH / 2, 14, C.textDim, 'center');
+      }
+    });
+
+    // Navigation hints
+    drawText('↑↓ Pilih  |  ENTER/SPACE Konfirmasi', GAME_W / 2, panelY + panelH - 25, 10, C.textDim, 'center');
+  }
+
+  // Input handling
+  if (pauseShowControls) {
+    if (justPressed('Escape')) pauseShowControls = false;
+    return null;
+  }
+
+  if (justPressed('ArrowUp') || justPressed('KeyW')) pauseSelection = (pauseSelection - 1 + pauseItems.length) % pauseItems.length;
+  if (justPressed('ArrowDown') || justPressed('KeyS')) pauseSelection = (pauseSelection + 1) % pauseItems.length;
+
+  if (justPressed('Escape')) {
+    pauseSelection = 0;
+    return { action: 'resume' };
+  }
+
+  if (justPressed('Space') || justPressed('Enter')) {
+    const selected = pauseItems[pauseSelection];
+    if (selected === 'Lanjutkan') {
+      pauseSelection = 0;
+      return { action: 'resume' };
+    } else if (selected === 'Kontrol') {
+      pauseShowControls = true;
+    } else if (selected === 'Menu Utama') {
+      pauseSelection = 0;
+      return { action: 'mainMenu' };
+    }
+  }
+
   return null;
 }

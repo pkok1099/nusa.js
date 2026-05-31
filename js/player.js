@@ -139,6 +139,10 @@ export function setStateRefs(gs, hs, sh, pf, dc) {
   parryFlashRef = pf; deathCountRef = dc;
 }
 
+// Reference to cleared stages array from game.js — for artifact tracking
+let clearedStagesRef = [false, false, false, false, false];
+export function setClearedStagesRef(ref) { clearedStagesRef = ref; }
+
 export function setOnCheckpoint(cb) {
   onCheckpointCallback = cb;
 }
@@ -1148,7 +1152,12 @@ export function damageBoss(boss, amount) {
     spawnParticle(boss.x + boss.w / 2, boss.y + boss.h / 2, C.gold, 40, 6, 60);
     const bossExp = [100, 150, 200, 250, 400][boss.stageId || 0] || 100;
     gainExp(bossExp);
-    player.artifacts++;
+    // Only award artifact if this stage hasn't been cleared before
+    // Boss can still be re-fought for grinding (EXP + Rupiah)
+    const stageId = boss.stageId || 0;
+    if (!clearedStagesRef[stageId]) {
+      player.artifacts++;
+    }
     const bossRupiah = [50, 80, 120, 160, 250][boss.stageId || 0] || 50;
     player.rupiah += bossRupiah;
     // Boss guaranteed equipment drop

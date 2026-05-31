@@ -11,7 +11,7 @@ import { particles, floatingTexts, updateParticles, clearParticles, spawnFloatin
 import { initRenderer } from './renderer.js';
 import { generateLevel } from './level.js';
 import { spawnEntities, createBoss, createEnemy } from './entities.js';
-import { player, updatePlayer, damagePlayer, damageEnemy, damageBoss, gainExp, resetPlayer, respawnPlayer, setStateRefs, bossDropQueue } from './player.js';
+import { player, updatePlayer, damagePlayer, damageEnemy, damageBoss, gainExp, resetPlayer, respawnPlayer, setStateRefs, bossDropQueue, setClearedStagesRef } from './player.js';
 import { updateEnemies, setEnemyShakeRef } from './enemy.js';
 import { updateBoss } from './boss.js';
 import { bossSummonQueue } from './boss.js';
@@ -23,7 +23,7 @@ import {
   drawBackground, drawLevel, drawPlayer, drawEnemies, drawBoss,
   drawItems, drawNPCs, drawPuzzleTriggers, drawParticles, drawHUD,
   drawDialog, drawMenu, drawPuzzle, drawBossIntro, drawGameOver, drawVictory,
-  drawInventory, drawShop, drawStageSelect, drawLevelUp,
+  drawInventory, drawShop, drawStageSelect, drawLevelUp, drawPauseMenu,
   setGameTime, resetBossIntroTimer, resetGameOverTimer, setCurrentStageId, setInvTab,
   showSaveIndicator, drawMiniMap, drawBloodstain,
 } from './draw-game.js';
@@ -38,6 +38,7 @@ const deathCount = { value: 0 };
 
 // Wire up state refs for player module
 setStateRefs(gameState, hitStop, shake, parryFlash, deathCount);
+setClearedStagesRef(clearedStages);
 setEnemyShakeRef(shake);
 import { setOnCheckpoint } from './player.js';
 setOnCheckpoint(() => { autoSave(currentStageId); });
@@ -64,6 +65,9 @@ let shopFromStage = false; // true if shop opened from stage select, false if fr
 
 // Game progress - which stages are unlocked
 let unlockedStages = [true, false, false, false, false];
+// Track which stages have been cleared (boss defeated) — for artifact counting
+// Boss can still be re-fought for grinding, but artifact only awarded once
+let clearedStages = [false, false, false, false, false];
 
 // ---- Canvas setup ----
 const canvas = document.getElementById('gameCanvas');
@@ -143,6 +147,7 @@ function startGame() {
   resetPlayer();
   resetInventory();
   unlockedStages = [true, false, false, false, false];
+  clearedStages = [false, false, false, false, false];
   deathCount.value = 0;
   // Delete old save when starting new game
   deleteSaveGame();
@@ -191,6 +196,10 @@ function continueGame() {
   if (data.unlockedStages) {
     unlockedStages = data.unlockedStages;
   }
+  // Restore cleared stages
+  if (data.clearedStages) {
+    clearedStages = data.clearedStages;
+  }
   // Restore death count
   if (data.deathCount !== undefined) {
     deathCount.value = data.deathCount;
@@ -202,7 +211,7 @@ function continueGame() {
 
 // Helper to auto-save
 function autoSave(currentStageId) {
-  saveGame(player, inventory, unlockedStages, deathCount.value, currentStageId);
+  saveGame(player, inventory, unlockedStages, deathCount.value, currentStageId, clearedStages);
   showSaveIndicator();
 }
 
@@ -277,6 +286,12 @@ function gameLoop() {
     }
 
     case 'playing': {
+      // ESC opens pause menu
+      if (justPressed('Escape')) {
+        gameState.value = 'paused';
+        break;
+      }
+
       const triggerBoss = updatePlayer(keys, entities, boss, bossActive, getPuzzleState(), tileMap, doStartDialog, initPuzzleInternal);
       if (triggerBoss === 'triggerBoss') {
         bossActive = true;
@@ -340,6 +355,34 @@ function gameLoop() {
       // Level up screen when skill points available
       if (inventory.skillPoints > 0 && justPressed('KeyL')) {
         gameState.value = 'levelUp';
+      }
+      break;
+    }
+
+    case 'paused': {
+      // Draw game world frozen behind pause overlay
+      drawBackground();
+      drawLevel(tileMap);
+      drawItems(entities);
+      drawPuzzleTriggers(entities);
+      drawNPCs(entities);
+      drawEnemies(entities);
+      drawBoss(boss, bossActive);
+      drawPlayer(parryFlash.timer);
+      drawBloodstain();
+      drawParticles(particles, floatingTexts);
+      drawHUD(boss, bossActive, deathCount.value);
+      drawMiniMap(tileMap, entities, boss, bossActive);
+
+      const pauseResult = drawPauseMenu();
+      if (pauseResult) {
+        if (pauseResult.action === 'resume') {
+          gameState.value = 'playing';
+        } else if (pauseResult.action === 'mainMenu') {
+          // Auto-save before returning to menu
+          autoSave(currentStageId);
+          gameState.value = 'menu';
+        }
       }
       break;
     }
@@ -408,7 +451,11 @@ function gameLoop() {
       const vicResult = drawVictory(deathCount.value);
       if (vicResult === 'menu') gameState.value = 'menu';
       else if (vicResult === 'stageSelect') {
-        // Unlock next stage
+        // Mark stage as cleared (for artifact tracking)
+        if (!clearedStages[currentStageId]) {
+          clearedStages[currentStageId] = true;
+        }
+        // Unlock next stage (always, even if already cleared — idempotent)
         if (currentStageId < 4) {
           unlockedStages[currentStageId + 1] = true;
         }
