@@ -1,0 +1,24 @@
+<<<<<<< SEARCH
+  // ESC to menu
+  if (justPressed('Escape')) {
+    hideOverlay();
+    return { action: 'menu' };
+  // T for Shop
+  if (justPressed("KeyT")) {
+    hideOverlay();
+    return { action: "shop" };
+  }
+  }
+=======
+  // ESC to menu
+  if (justPressed('Escape')) {
+    hideOverlay();
+    return { action: 'menu' };
+  }
+
+  // T for Shop
+  if (justPressed('KeyT')) {
+    hideOverlay();
+    return { action: 'shop' };
+  }
+>>>>>>> REPLACE

@@ -32,13 +32,15 @@ export function setupInput(canvas) {
 
   window.addEventListener('keyup', e => { keys[e.code] = false; });
 
-  canvas.addEventListener('mousemove', e => {
+  // Phase 5: Use window instead of canvas to avoid overlay blocking
+  // Use pointer events for better compatibility
+  window.addEventListener('pointermove', e => {
     const r = canvas.getBoundingClientRect();
     mouse.x = (e.clientX - r.left) * (GAME_W / r.width);
     mouse.y = (e.clientY - r.top) * (GAME_H / r.height);
   });
 
-  canvas.addEventListener('click', () => {
+  window.addEventListener('pointerdown', () => {
     mouse.clicked = true;
     initAudio();
   });

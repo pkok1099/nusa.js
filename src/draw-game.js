@@ -529,6 +529,12 @@ export function drawMapSelect(unlockedMaps, clearedMaps) {
     return { action: 'menu' };
   }
 
+  // T for Shop
+  if (justPressed('KeyT')) {
+    hideOverlay();
+    return { action: 'shop' };
+  }
+
   renderOverlayToScreen();
   return null;
 }
