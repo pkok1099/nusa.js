@@ -2,11 +2,11 @@
 // map-manager.js — Map loading, transitions, and progress
 // ============================================================
 
-import { MAP_DATA as map1Data, generateMap as genMap1, spawnEntities as spawnMap1 } from '../map/map1.js';
-import { MAP_DATA as map2Data, generateMap as genMap2, spawnEntities as spawnMap2 } from '../map/map2.js';
-import { MAP_DATA as map3Data, generateMap as genMap3, spawnEntities as spawnMap3 } from '../map/map3.js';
-import { MAP_DATA as map4Data, generateMap as genMap4, spawnEntities as spawnMap4 } from '../map/map4.js';
-import { MAP_DATA as map5Data, generateMap as genMap5, spawnEntities as spawnMap5 } from '../map/map5.js';
+import { MAP_DATA as map1Data, generateMap as genMap1, spawnEntities as spawnMap1 } from './maps/map1.js';
+import { MAP_DATA as map2Data, generateMap as genMap2, spawnEntities as spawnMap2 } from './maps/map2.js';
+import { MAP_DATA as map3Data, generateMap as genMap3, spawnEntities as spawnMap3 } from './maps/map3.js';
+import { MAP_DATA as map4Data, generateMap as genMap4, spawnEntities as spawnMap4 } from './maps/map4.js';
+import { MAP_DATA as map5Data, generateMap as genMap5, spawnEntities as spawnMap5 } from './maps/map5.js';
 import { TILE } from './config.js';
 import { fillRect } from './level.js';
 import { setTileMap } from './physics.js';

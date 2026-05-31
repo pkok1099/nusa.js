@@ -5,8 +5,8 @@
 //            Water is non-solid — player swims through it.
 //            Ground platforms (1) provide walkable surfaces above water.
 
-import { TILE } from '../js/config.js';
-import { createEnemy, createItem, createNPC, createPuzzleTrigger } from '../js/entities.js';
+import { TILE } from '../config.js';
+import { createEnemy, createItem, createNPC, createPuzzleTrigger } from '../entities.js';
 
 export const MAP_DATA = {
   id: 3,

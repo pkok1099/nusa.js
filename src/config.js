@@ -290,3 +290,140 @@ export const WEAPON_ARTS = {
   panah_api:  { name: 'Hujan Api', type: 'rain', damageMult: 1.8, range: 150, duration: 30, desc: 'Hujan panah api dari langit' },
   trisula:    { name: 'Trisula Dewa', type: 'divine', damageMult: 3.5, range: 120, duration: 28, desc: 'Serangan ilahi trisula dewa' },
 };
+
+// ---- 3D CAMERA SYSTEM (Phase 3) ----
+// PerspectiveCamera parameters
+export const CAMERA_FOV = 60;                // Field of view (degrees)
+export const CAMERA_NEAR = 1;                // Near clip plane
+export const CAMERA_FAR = 5000;              // Far clip plane
+export const CAMERA_DISTANCE = 480;          // Default distance from focus point
+export const CAMERA_PITCH = 0.25;            // Pitch offset (radians) — slight downward look
+export const CAMERA_HEIGHT_OFFSET = 30;      // Additional height above focus point (game pixels)
+export const CAMERA_FOLLOW_SPEED = 0.08;     // Lerp factor for camera follow
+export const CAMERA_LOCKON_FOLLOW_SPEED = 0.05; // Slower lerp when locked on
+export const CAMERA_PREDICTION = 0.15;       // Look-ahead factor based on player velocity
+
+// Lock-on targeting
+export const LOCKON_RANGE = 350;             // Max distance to find lock-on targets (game pixels)
+export const LOCKON_SWITCH_ANGLE = 1.2;      // Angle threshold for switching targets (radians)
+export const LOCKON_KEY = 'KeyT';            // Key to toggle lock-on
+export const LOCKON_SWITCH_KEY = 'KeyY';     // Key to switch targets
+export const LOCKON_BREAK_DISTANCE = 500;    // Distance at which lock-on breaks
+export const LOCKON_DEAD_ZONE = 0.03;        // Dead zone for lock-on camera adjustment
+
+// Camera collision
+export const CAMERA_COLLISION_MARGIN = 20;   // Pixels of margin from walls
+export const CAMERA_MIN_DISTANCE = 200;      // Don't push camera closer than this
+export const CAMERA_COLLISION_SAMPLES = 8;   // Ray samples for collision detection
+
+// Camera shake damping
+export const CAMERA_SHAKE_DECAY = 0.9;       // Shake intensity decay per frame
+export const CAMERA_SHAKE_OFFSET_MULT = 2.0; // Multiplier for shake offset
+
+// ---- RAPIER COLLISION GROUPS (Phase 2) ----
+// Bitmask-based collision groups for Rapier physics.
+// interactionGroups(membership, filter) determines which pairs interact.
+//
+// ENVIRONMENT  — Static tile colliders (floors, walls, platforms)
+// PLAYER       — Player body collider (for entity-entity overlap detection)
+// ENEMY        — Enemy/boss body colliders
+// HITBOX       — Active attack area (enabled only during attack frames)
+// HURTBOX      — Vulnerable area (disabled during i-frames/dodge)
+//
+// Collision rules:
+//   PLAYER_HURTBOX interacts with ENEMY_HITBOX  (player takes damage)
+//   ENEMY_HURTBOX  interacts with PLAYER_HITBOX  (enemy takes damage)
+//   PLAYER         interacts with ENVIRONMENT     (movement collision)
+//   ENEMY          interacts with ENVIRONMENT     (movement collision)
+export const COLLISION_GROUPS = {
+  ENVIRONMENT : 0b00000001,  // 1
+  PLAYER      : 0b00000010,  // 2
+  ENEMY       : 0b00000100,  // 4
+  HITBOX      : 0b00001000,  // 8
+  HURTBOX     : 0b00010000,  // 16
+};
+
+// Helper: build Rapier interaction groups (membership | filter << 16)
+// membership = which groups this collider BELONGS TO
+// filter     = which groups this collider INTERACTS WITH
+export function interactionGroups(membership, filter) {
+  return (membership & 0xFFFF) | ((filter & 0xFFFF) << 16);
+}
+
+// Pre-defined interaction groups for common collider types
+export const INTERACTION = {
+  // Player body — interacts with environment only (tile collision handled separately)
+  PLAYER_BODY: interactionGroups(
+    COLLISION_GROUPS.PLAYER,
+    COLLISION_GROUPS.ENVIRONMENT
+  ),
+  // Player hurtbox — can be hit by enemy hitboxes
+  PLAYER_HURTBOX: interactionGroups(
+    COLLISION_GROUPS.HURTBOX,
+    COLLISION_GROUPS.HITBOX  // Only interacts with hitboxes
+  ),
+  // Player hurtbox DISABLED (during i-frames) — interacts with nothing
+  PLAYER_HURTBOX_DISABLED: interactionGroups(
+    COLLISION_GROUPS.HURTBOX,
+    0  // No interactions
+  ),
+  // Player hitbox — can hit enemy hurtboxes
+  PLAYER_HITBOX: interactionGroups(
+    COLLISION_GROUPS.HITBOX,
+    COLLISION_GROUPS.HURTBOX  // Only interacts with hurtboxes
+  ),
+  // Enemy body — interacts with environment only
+  ENEMY_BODY: interactionGroups(
+    COLLISION_GROUPS.ENEMY,
+    COLLISION_GROUPS.ENVIRONMENT
+  ),
+  // Enemy hurtbox — can be hit by player hitboxes
+  ENEMY_HURTBOX: interactionGroups(
+    COLLISION_GROUPS.HURTBOX,
+    COLLISION_GROUPS.HITBOX
+  ),
+  // Enemy hitbox — can hit player hurtboxes
+  ENEMY_HITBOX: interactionGroups(
+    COLLISION_GROUPS.HITBOX,
+    COLLISION_GROUPS.HURTBOX
+  ),
+  // Environment — interacts with player and enemy bodies
+  ENVIRONMENT: interactionGroups(
+    COLLISION_GROUPS.ENVIRONMENT,
+    COLLISION_GROUPS.PLAYER | COLLISION_GROUPS.ENEMY
+  ),
+};
+
+// ---- PHASE 5: ATMOSPHERE SYSTEM ----
+// Stage atmosphere identifiers (used by lighting, audio, particles, post-fx)
+export const STAGE_ATMOSPHERE_IDS = {
+  BOROBUDUR: 0,
+  BORNEO: 1,
+  BROMO: 2,
+  BALI: 3,
+  PRAMBANAN: 4,
+};
+
+// Audio volume defaults
+export const AUDIO_MASTER_VOL = 0.8;
+export const AUDIO_BGM_VOL = 0.5;
+export const AUDIO_SFX_VOL = 0.7;
+export const AUDIO_AMBIENT_VOL = 0.4;
+
+// Post-processing defaults
+export const BLOOM_DEFAULT_STRENGTH = 0.3;
+export const BLOOM_DEFAULT_THRESHOLD = 0.85;
+export const BLOOM_DEFAULT_RADIUS = 0.4;
+export const VIGNETTE_DEFAULT_STRENGTH = 0.3;
+export const VIGNETTE_LOW_HP_THRESHOLD = 0.3;  // HP ratio below which vignette intensifies
+export const VIGNETTE_RED_TINT_THRESHOLD = 0.2; // HP ratio below which red tint appears
+
+// Shadow mapping defaults
+export const SHADOW_MAP_SIZE = 1024;
+export const SHADOW_BIAS = -0.001;
+export const SHADOW_NORMAL_BIAS = 0.02;
+
+// Particle system limits
+export const MAX_AMBIENT_PARTICLES = 60;
+export const MAX_COMBAT_PARTICLES = 300;
+export const MAX_PROJECTILE_PARTICLES = 50;

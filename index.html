@@ -3,149 +3,176 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0">
-<title>NUSANTARA: Warisan Terakhir</title>
+<title>NUSANTARA: Warisan Terakhir — 3D Migration</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Segoe UI',sans-serif;user-select:none}
-canvas{display:block;margin:auto;image-rendering:pixelated}
-#gameContainer{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#000}
-#loading{position:absolute;color:#D4AF37;font-size:18px;text-align:center;top:50%;left:50%;transform:translate(-50%,-50%)}
+
+/* Three.js canvas container — full screen behind HUD */
+#gameContainer{width:100%;height:100%;position:relative}
+#gameContainer canvas{display:block;width:100%!important;height:100%!important}
+
+/* ---- HUD OVERLAY (HTML + CSS, per migration spec) ---- */
+#hud{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10}
+
+/* Top-left: HP + Stamina + Poise bars */
+#hud-top-left{position:absolute;top:12px;left:12px}
+#hud-top-left .bar-row{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+#hud-top-left .bar-label{color:#E8D5A366;font-size:11px;width:20px;text-align:right}
+#hud-top-left .bar-track{position:relative;border-radius:3px;overflow:hidden}
+#hud-top-left .bar-fill{position:absolute;top:0;left:0;height:100%;border-radius:3px;transition:width 0.05s linear}
+#hp-bar{width:140px;height:14px;background:#440000}
+#hp-bar .bar-fill{background:#FF4444}
+#hp-text{color:#fff;font-size:9px;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);white-space:nowrap}
+#stamina-bar{width:140px;height:10px;background:#554400}
+#stamina-bar .bar-fill{background:#CCAA00}
+#stamina-text{color:#fff;font-size:8px;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);white-space:nowrap}
+#poise-bar{width:140px;height:6px;background:#332200}
+#poise-bar .bar-fill{background:#D4AF37}
+#energy-bar{width:80px;height:14px;background:#003344}
+#energy-bar .bar-fill{background:#00CED1}
+#energy-text{color:#fff;font-size:9px;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);white-space:nowrap}
+
+/* Estus & Hollowing */
+#hud-status{display:flex;gap:12px;margin-top:6px;font-size:10px;color:#E8D5A3}
+#hud-status .estus{color:#44FF44}
+#hud-status .hollowing{color:#FF4444AA}
+#hud-status .twohand{color:#FFD700}
+#hud-status .exhausted{color:#FF4444;font-weight:bold}
+
+/* Top-right: Level + Artifacts */
+#hud-top-right{position:absolute;top:12px;right:16px;text-align:right}
+#hud-top-right .level{color:#D4AF37;font-size:14px;font-weight:bold}
+#hud-top-right .artifacts{color:#00CED1;font-size:11px;margin-top:4px}
+
+/* Bottom-center: Skills */
+#hud-bottom-center{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;gap:12px}
+.skill-slot{width:44px;height:44px;border:2px solid #D4AF3780;border-radius:6px;background:#00000080;display:flex;align-items:center;justify-content:center;position:relative}
+.skill-slot .key{color:#E8D5A3;font-size:10px;position:absolute;bottom:2px;right:4px}
+.skill-slot .icon{font-size:16px}
+.skill-cooldown{position:absolute;top:0;left:0;width:100%;height:100%;background:#00000080;border-radius:4px}
+
+/* Boss HP bar (shown during boss fight) */
+#boss-hp{position:absolute;top:40px;left:50%;transform:translateX(-50%);display:none;text-align:center}
+#boss-hp .boss-name{color:#D4AF37;font-size:14px;font-weight:bold;margin-bottom:4px}
+#boss-hp .boss-bar-track{width:400px;height:12px;background:#440000;border-radius:4px;overflow:hidden}
+#boss-hp .boss-bar-fill{height:100%;background:#FF4444;border-radius:4px;transition:width 0.05s linear}
+#boss-hp .boss-posture-track{width:400px;height:4px;background:#332200;border-radius:2px;overflow:hidden;margin-top:2px}
+#boss-hp .boss-posture-fill{height:100%;background:#D4AF37;border-radius:2px;transition:width 0.05s linear}
+
+/* Dialog box */
+#dialog-box{position:absolute;bottom:60px;left:50%;transform:translateX(-50%);width:700px;background:#000000CC;border:2px solid #D4AF3780;border-radius:8px;padding:16px;display:none;pointer-events:auto}
+#dialog-box .speaker{color:#D4AF37;font-size:13px;font-weight:bold;margin-bottom:6px}
+#dialog-box .text{color:#E8D5A3;font-size:14px;line-height:1.6}
+#dialog-box .hint{color:#E8D5A366;font-size:10px;margin-top:8px;text-align:right}
+
+/* Interaction labels */
+#interaction-label{position:absolute;bottom:100px;left:50%;transform:translateX(-50%);color:#F5E6A3;font-size:12px;display:none;text-shadow:0 0 4px #000}
+
+/* Fullscreen overlays (menu, game over, etc.) */
+#fullscreen-overlay{position:absolute;top:0;left:0;width:100%;height:100%;display:none;z-index:20;pointer-events:auto}
+
+/* Save indicator */
+#save-indicator{position:absolute;top:12px;left:50%;transform:translateX(-50%);color:#44FF44;font-size:11px;display:none;opacity:0;transition:opacity 0.3s}
+
+/* Loading screen */
+#loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#D4AF37;font-size:18px;text-align:center;z-index:30}
 #loading .sub{font-size:12px;color:#D4AF3788;margin-top:8px}
-#loadError{display:none;position:absolute;color:#FF6666;font-size:14px;text-align:center;top:55%;left:50%;transform:translate(-50%,-50%);max-width:550px;line-height:1.6}
-#loadError a{color:#D4AF37}
-#loadError code{color:#D4AF37;font-size:13px;background:#1A1A0A;padding:2px 6px;border-radius:3px}
-#loadError .title{color:#FF6666;font-size:18px;font-weight:bold;margin-bottom:12px}
-#loadError .detail{color:#D4AF3788;font-size:11px;margin-top:12px;word-break:break-all}
+
+/* Minimap */
+#minimap{position:absolute;bottom:16px;right:16px;border:1px solid #D4AF3740;border-radius:4px;image-rendering:pixelated}
 </style>
 </head>
 <body>
 <div id="gameContainer">
-<canvas id="gameCanvas"></canvas>
-<div id="loading">MEMUAT NUSANTARA...<div class="sub">Harap tunggu sebentar</div><div class="sub" id="loadProgress" style="margin-top:4px;color:#D4AF3755"></div></div>
-<div id="loadError">
-  <div class="title">Gagal Memuat Game</div>
-  <div>Pastikan file dijalankan via HTTP server dari folder <code>game/</code> (bukan file://).</div>
-  <div style="margin-top:8px">Cara 1: Dari folder <code>game/</code>:</div>
-  <div style="margin-top:4px"><code>cd game && npx serve .</code></div>
-  <div style="margin-top:2px">atau</div>
-  <div><code>cd game && python3 -m http.server 8000</code></div>
-  <div style="margin-top:4px">Lalu buka <code>http://localhost:3000</code> atau <code>http://localhost:8000</code></div>
-  <div style="margin-top:8px">Cara 2: Gunakan npm:</div>
-  <div><code>cd game && npm run dev</code></div>
-  <div style="margin-top:8px">Cara 3: Build produksi (tanpa HTTP server):</div>
-  <div><code>cd game && npm run build</code> lalu buka <code>dist/index.html</code> di browser</div>
-  <div class="detail" id="errorDetail"></div>
-  <div style="margin-top:8px"><a href="https://github.com/pkok1099/nusa.js" target="_blank">GitHub Repo</a></div>
+  <!-- Three.js canvas will be injected here -->
+
+  <!-- HUD overlay (HTML + CSS) -->
+  <div id="hud" style="display:none">
+    <!-- Top-left: Bars -->
+    <div id="hud-top-left">
+      <div class="bar-row">
+        <span class="bar-label">HP</span>
+        <div class="bar-track" id="hp-bar">
+          <div class="bar-fill" style="width:100%"></div>
+          <span id="hp-text">100/100</span>
+        </div>
+      </div>
+      <div class="bar-row">
+        <span class="bar-label">ST</span>
+        <div class="bar-track" id="stamina-bar">
+          <div class="bar-fill" style="width:100%"></div>
+          <span id="stamina-text">100</span>
+        </div>
+      </div>
+      <div class="bar-row">
+        <span class="bar-label">PS</span>
+        <div class="bar-track" id="poise-bar">
+          <div class="bar-fill" style="width:100%"></div>
+        </div>
+      </div>
+      <div class="bar-row">
+        <span class="bar-label">EN</span>
+        <div class="bar-track" id="energy-bar">
+          <div class="bar-fill" style="width:100%"></div>
+          <span id="energy-text">100/100</span>
+        </div>
+      </div>
+      <div id="hud-status">
+        <span class="estus" id="estus-count">Estus: 5</span>
+      </div>
+    </div>
+
+    <!-- Top-right: Level & Artifacts -->
+    <div id="hud-top-right">
+      <div class="level" id="player-level">Lv.1</div>
+      <div class="artifacts" id="artifact-count">0/5</div>
+    </div>
+
+    <!-- Boss HP -->
+    <div id="boss-hp">
+      <div class="boss-name" id="boss-name">Boss</div>
+      <div class="boss-bar-track"><div class="boss-bar-fill" style="width:100%"></div></div>
+      <div class="boss-posture-track"><div class="boss-posture-fill" style="width:0%"></div></div>
+    </div>
+
+    <!-- Bottom-center: Skills -->
+    <div id="hud-bottom-center">
+      <div class="skill-slot" id="skill-q">
+        <span class="icon">Q</span><span class="key">Skill</span>
+      </div>
+      <div class="skill-slot" id="skill-g">
+        <span class="icon">G</span><span class="key">Art</span>
+      </div>
+    </div>
+
+    <!-- Dialog box -->
+    <div id="dialog-box">
+      <div class="speaker" id="dialog-speaker"></div>
+      <div class="text" id="dialog-text"></div>
+      <div class="hint">[E] Lanjut &nbsp; [Space] Skip</div>
+    </div>
+
+    <!-- Interaction label -->
+    <div id="interaction-label"></div>
+
+    <!-- Save indicator -->
+    <div id="save-indicator">Tersimpan ✓</div>
+
+    <!-- Minimap -->
+    <canvas id="minimap" width="120" height="80"></canvas>
+  </div>
+
+  <!-- Fullscreen overlay for menus, game over, etc. -->
+  <div id="fullscreen-overlay"></div>
+
+  <!-- Loading screen -->
+  <div id="loading">
+    MEMUAT NUSANTARA...
+    <div class="sub">Harap tunggu sebentar</div>
+  </div>
 </div>
-</div>
 
-<!-- Cache-bust: append version to prevent stale cached modules -->
-<script>
-  // Inject version into all module URLs to bust browser cache
-  window.__nusaVersion = '0.8.0';
-  var _origFetch = window.fetch;
-  window.fetch = function(url, opts) {
-    if (typeof url === 'string' && (url.indexOf('/js/') >= 0 || url.indexOf('/map/') >= 0) && url.indexOf('?v=') < 0 && url.indexOf('t=') < 0) {
-      url = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'v=' + window.__nusaVersion;
-    }
-    return _origFetch.call(this, url, opts);
-  };
-</script>
-
-<!-- ES Module Entry Point — browser native, no build tool needed -->
-<script type="module" src="js/game.js?v=0.8.0"></script>
-
-<!-- Fallback: if module fails to load, show error with diagnostics -->
-<script>
-(function() {
-  var moduleLoaded = false;
-  var moduleError = null;
-
-  // Detect file:// protocol early
-  if (location.protocol === 'file:') {
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('loadError').style.display = 'block';
-    document.getElementById('errorDetail').textContent = 'Protocol: file:// (perlu HTTP server)';
-    return;
-  }
-
-  // Listen for script tag load failures (network/CORS issues)
-  window.addEventListener('error', function(e) {
-    if (e.target && e.target.tagName === 'SCRIPT') {
-      var src = e.target.src || '(inline)';
-      // Strip cache-bust param for cleaner error message
-      src = src.replace(/[?&]v=[^&]*/, '');
-      moduleError = 'Script gagal dimuat: ' + src;
-      console.error('[NUSANTARA] Script load error:', src);
-      // Delay showError to let unhandledrejection capture more specific error
-      setTimeout(showError, 200);
-    }
-  }, true);
-
-  // Catch unhandled promise rejections for module import failures
-  window.addEventListener('unhandledrejection', function(e) {
-    var reason = e.reason;
-    var msg = reason ? (reason.message || String(reason)) : 'Unknown';
-    // Detect all module-related errors including:
-    // - "Failed to fetch" (network error)
-    // - "import" or "module" (import failures)
-    // - "does not provide an export named 'X'" (missing named export - cache issue!)
-    // - "CORS" (cross-origin issues)
-    var isModuleError = msg.indexOf('import') >= 0 ||
-        msg.indexOf('module') >= 0 ||
-        msg.indexOf('Failed to fetch') >= 0 ||
-        msg.indexOf('CORS') >= 0 ||
-        msg.indexOf('does not provide an export') >= 0 ||
-        msg.indexOf('provide an export') >= 0 ||
-        msg.indexOf('not found') >= 0 ||
-        (reason && reason instanceof TypeError && msg.indexOf('resolve') >= 0);
-    if (isModuleError) {
-      moduleError = 'Module import gagal: ' + msg;
-      console.error('[NUSANTARA] Module import error:', msg);
-      showError();
-    }
-    console.warn('[NUSANTARA] Unhandled promise:', msg);
-  });
-
-  function showError() {
-    if (moduleLoaded) return;
-    // Don't overwrite already-displayed error
-    if (document.getElementById('loadError').style.display === 'block') return;
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('loadError').style.display = 'block';
-    var detail = moduleError || 'Unknown error';
-    // Add cache hint if it might be a cache issue
-    if (detail.indexOf('export') >= 0 || detail.indexOf('not found') >= 0) {
-      detail += ' | Kemungkinan browser cache lama — coba Ctrl+Shift+R (hard refresh) atau buka di Incognito';
-    }
-    detail += ' | URL: ' + location.href;
-    document.getElementById('errorDetail').textContent = detail;
-  }
-
-  // Mark as loaded when game.js runs successfully
-  window.__nusaLoaded = function() {
-    moduleLoaded = true;
-    // Hide loading and error screens
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('loadError').style.display = 'none';
-  };
-
-  // Timeout — if game hasn't loaded in 15 seconds, show diagnostics
-  setTimeout(function() {
-    if (!moduleLoaded) {
-      var detail = 'Timeout setelah 15 detik.';
-      if (moduleError) detail += ' ' + moduleError;
-      else detail += ' Tidak ada error tertangkap — buka Console (F12) untuk detail.';
-      detail += ' | URL: ' + location.href;
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('loadError').style.display = 'block';
-      document.getElementById('errorDetail').textContent = detail;
-    }
-  }, 15000);
-})();
-</script>
+<script type="module" src="/src/main.js"></script>
 </body>
 </html>

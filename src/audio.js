@@ -1,5 +1,6 @@
 // ============================================================
 // audio.js — Sound system using Web Audio API
+// Phase 5: Extended with spatial audio bridge
 // ============================================================
 
 let audioCtx = null;
@@ -109,4 +110,38 @@ export function playSound(type) {
         osc.start(t); osc.stop(t + 0.3); break;
     }
   } catch (e) { /* silent fail */ }
+}
+
+// ============================================================
+// Phase 5: Spatial audio bridge
+// Delegates positional sounds to spatial-audio.js when available
+// ============================================================
+
+let playPositionalSoundFn = null;
+
+/**
+ * Register the positional sound function from spatial-audio.js.
+ * Called during Phase 5 initialization.
+ */
+export function registerPositionalSound(fn) {
+  playPositionalSoundFn = fn;
+}
+
+/**
+ * Play a positional sound at a world location.
+ * Falls back to non-positional playSound() if spatial audio not available.
+ * @param {string} type — Sound type
+ * @param {number} x — Game X position
+ * @param {number} y — Game Y position
+ */
+export function playPositionalSound(type, x, y) {
+  if (playPositionalSoundFn) {
+    try {
+      playPositionalSoundFn(`sfx_${type}_${Date.now()}`, type, x, y);
+    } catch (e) {
+      playSound(type); // Fallback to non-positional
+    }
+  } else {
+    playSound(type); // Fallback to non-positional
+  }
 }

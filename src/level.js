@@ -2,11 +2,11 @@
 // level.js — Level generation and tile map management
 // ============================================================
 
-import { generateMap as genMap1 } from '../map/map1.js';
-import { generateMap as genMap2 } from '../map/map2.js';
-import { generateMap as genMap3 } from '../map/map3.js';
-import { generateMap as genMap4 } from '../map/map4.js';
-import { generateMap as genMap5 } from '../map/map5.js';
+import { generateMap as genMap1 } from './maps/map1.js';
+import { generateMap as genMap2 } from './maps/map2.js';
+import { generateMap as genMap3 } from './maps/map3.js';
+import { generateMap as genMap4 } from './maps/map4.js';
+import { generateMap as genMap5 } from './maps/map5.js';
 
 export function fillRect(map, sx, sy, w, h, tile) {
   for (let y = sy; y < sy + h && y < map.length; y++)

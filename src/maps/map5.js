@@ -4,8 +4,8 @@
 // This is the FINAL map — there is NO exit door.
 // Defeating the boss here completes the game.
 
-import { TILE } from '../js/config.js';
-import { createEnemy, createItem, createNPC, createPuzzleTrigger } from '../js/entities.js';
+import { TILE } from '../config.js';
+import { createEnemy, createItem, createNPC, createPuzzleTrigger } from '../entities.js';
 
 export const MAP_DATA = {
   id: 4,

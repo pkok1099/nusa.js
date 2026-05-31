@@ -1,9 +1,12 @@
 // ============================================================
 // game.js — Main game state machine, initialization, and loop
+// Phase 3: Three.js renderer + 3D camera + lock-on
+// Phase 2: Fixed timestep + Rapier combat physics
 // ============================================================
 
 import { GAME_W, GAME_H, WEAPONS, ARMORS, ACCESSORIES, POTIONS, C,
-         MAP_LOAD_DURATION, BOSS_SUMMON_DURATION, DOOR_INTERACT_RANGE, ALTAR_INTERACT_RANGE } from './config.js';
+         MAP_LOAD_DURATION, BOSS_SUMMON_DURATION, DOOR_INTERACT_RANGE, ALTAR_INTERACT_RANGE,
+         LOCKON_KEY, LOCKON_SWITCH_KEY } from './config.js';
 import { MAP_REGISTRY, loadMap, summonBoss, isBossDefeated, isDoorOpen, getMapData,
          currentMapId, clearedMaps, unlockedMaps, solvedPuzzles,
          markBossDefeated, markPuzzleSolved, isPuzzleSolved,
@@ -11,9 +14,9 @@ import { MAP_REGISTRY, loadMap, summonBoss, isBossDefeated, isDoorOpen, getMapDa
 import { initAudio, playSound } from './audio.js';
 import { keys, savePrevKeys, setupInput, justPressed, mouse } from './input.js';
 import { setTileMap } from './physics.js';
-import { camera, updateCamera } from './camera.js';
+import { camera, updateCamera, toggleLockOn, switchLockOnTarget, releaseLockOn, resetCamera, lockOn } from './camera.js';
 import { particles, floatingTexts, updateParticles, clearParticles, spawnFloatingText, setDamageCallbacks } from './particles.js';
-import { initRenderer } from './renderer.js';
+import { initRenderer, beginFrame, endFrame, render, resizeRenderer, setShakeOffset } from './renderer.js';
 import { player, updatePlayer, damagePlayer, damageEnemy, damageBoss, gainExp, resetPlayer, respawnPlayer, setStateRefs, bossDropQueue } from './player.js';
 import { createEnemy } from './entities.js';
 import { updateEnemies, setEnemyShakeRef } from './enemy.js';
@@ -33,6 +36,17 @@ import {
   showSaveIndicator, drawMiniMap, drawBloodstain,
 } from './draw-game.js';
 import { saveGame, loadGame, hasSaveGame, deleteSaveGame } from './save.js';
+import {
+  registerPlayer, onMapLoad, onMapUnload,
+  updateCombatPhysics, shutdownCombatPhysics,
+  FIXED_DT, MAX_ACCUMULATOR,
+} from './combat-physics.js';
+import { isRapierReady } from './rapier-world.js';
+import { applyStageLighting, updateStageLighting, updateShadowCamera, resetStageLighting } from './stage-lighting.js';
+import { transitionToStage, stopAllAudio, resumeAudioContext, isSpatialAudioReady, playPositionalSound as spatialPlayPositionalSound } from './spatial-audio.js';
+import { initStageParticles, clearAllParticles3D } from './particles3d.js';
+import { initPostProcessing, applyStagePostProcessing, updatePostProcessing, renderWithPostProcessing, isPostProcessingActive, flashBloom, screenFlash } from './post-processing.js';
+import { setUsePostProcessing } from './renderer.js';
 
 // ---- Shared mutable state ----
 const gameState = { value: 'menu' };
@@ -47,8 +61,11 @@ setEnemyShakeRef(shake);
 import { setOnCheckpoint } from './player.js';
 setOnCheckpoint(() => { autoSave(); });
 
-// BUG FIX v0.6.2: Wire up particle damage callbacks so player arrows
-// can hit enemies and bosses
+// Phase 5: Wire up spatial audio bridge
+import { registerPositionalSound } from './audio.js';
+registerPositionalSound(spatialPlayPositionalSound);
+
+// Wire up particle damage callbacks
 setDamageCallbacks(
   damageEnemy,
   damageBoss,
@@ -64,37 +81,44 @@ let tileMap = [];
 let boss = null;
 let bossActive = false;
 let puzzleSolved = false;
-let shopFromStage = false; // true if shop opened from map select, false if from level
+let shopFromStage = false;
 
 // Map system variables
 let loadingTargetMap = 0;
 let loadingTimer = 0;
 let bossSummonTimer = 0;
 
-// ---- Canvas setup ----
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
+// ---- Fixed timestep variables (Phase 2) ----
+let lastFrameTime = 0;
+let physicsAccumulator = 0;
+let physicsStepCount = 0;
+
+// ---- THREE.JS SETUP (replaces Canvas 2D setup) ----
+// Create a canvas element for Three.js WebGLRenderer
+const gameCanvas = document.createElement('canvas');
+gameCanvas.id = 'gameCanvas';
+gameCanvas.style.display = 'block';
+document.getElementById('gameContainer').insertBefore(gameCanvas, document.getElementById('hud'));
+
+// Initialize Three.js renderer
+initRenderer(gameCanvas);
+setupInput(gameCanvas);
+
 const loadingEl = document.getElementById('loading');
-initRenderer(ctx);
-setupInput(canvas);
 
 function resize() {
-  const ratio = GAME_W / GAME_H;
-  let w = window.innerWidth, h = window.innerHeight;
-  if (w / h > ratio) w = h * ratio; else h = w / ratio;
-  canvas.style.width = w + 'px';
-  canvas.style.height = h + 'px';
-  canvas.width = GAME_W;
-  canvas.height = GAME_H;
+  resizeRenderer();
 }
 window.addEventListener('resize', resize);
 resize();
 
-// ---- Map start function (replaces startStage) ----
+// Show HUD overlay
+const hudEl = document.getElementById('hud');
+
+// ---- Map start function ----
 function startMap(mapId) {
   const mapData = getMapData(mapId);
 
-  // Load map using map-manager (this also sets currentMapId internally)
   const loaded = loadMap(mapId);
   tileMap = loaded.tileMap;
   entities = loaded.entities;
@@ -105,9 +129,8 @@ function startMap(mapId) {
   resetPuzzle();
   puzzleSolved = false;
 
-  // Set player position from map data
   const stats = getComputedStats(player.level);
-  player.currentStageId = mapId; // keep for compatibility
+  player.currentStageId = mapId;
   setCurrentStageId(mapId);
   player.x = mapData.playerStartX * 32;
   player.y = mapData.playerStartY * 32 - player.h;
@@ -116,13 +139,10 @@ function startMap(mapId) {
   player.vx = 0;
   player.vy = 0;
   player.invincible = 60;
-  // Souls-like v0.7.0: Full heal on stage start (bonfire-style)
   player.hp = stats.maxHp;
   player.stamina = stats.maxStamina;
   player.energy = stats.maxEnergy;
-  // Refill estus when starting a new map
   player.estus = player.estusMax;
-  // Reset combat state
   player.poisonTimer = 0;
   player.stunTimer = 0;
   player.slowTimer = 0;
@@ -131,13 +151,31 @@ function startMap(mapId) {
   player.staminaRegenDelay = 0;
 
   camera.x = 0; camera.y = 0;
+  resetCamera(player.x + player.w / 2, player.y + player.h / 2);
   clearParticles();
   hitStop.value = 0;
   parryFlash.timer = 0;
 
+  // Phase 2: Register combat physics for new map
+  if (isRapierReady()) {
+    onMapUnload(); // Clean previous map
+    onMapLoad(tileMap);
+    registerPlayer();
+  }
+
+  // Phase 5: Apply stage atmosphere (lighting, fog, particles, audio)
+  applyStageLighting(mapId);
+  applyStagePostProcessing(mapId);
+  initStageParticles(mapId);
+  if (isSpatialAudioReady()) {
+    transitionToStage(mapId);
+  }
+
+  // Show HUD during gameplay
+  hudEl.style.display = 'block';
+
   gameState.value = 'playing';
 
-  // Play intro dialog
   const speaker = mapId === 0 ? 'Candra Kirana' :
     mapId === 1 ? 'Penjaga Hutan' :
     mapId === 2 ? 'Pendeta Api' :
@@ -148,9 +186,8 @@ function startMap(mapId) {
 function startGame() {
   resetPlayer();
   resetInventory();
-  resetProgress(); // reset map-manager progress
+  resetProgress();
   deathCount.value = 0;
-  // Delete old save when starting new game
   deleteSaveGame();
   gameState.value = 'mapSelect';
 }
@@ -158,11 +195,9 @@ function startGame() {
 function continueGame() {
   const data = loadGame();
   if (!data) {
-    // No save found, start new game
     startGame();
     return;
   }
-  // Restore player
   player.hp = data.player.hp;
   player.level = data.player.level;
   player.exp = data.player.exp;
@@ -174,18 +209,14 @@ function continueGame() {
   if (data.player.checkpoint) {
     player.checkpoint = data.player.checkpoint;
   }
-  // Souls-like v0.7.0: Restore estus and bloodstain
   player.estus = data.player.estus !== undefined ? data.player.estus : 5;
   player.estusMax = data.player.estusMax !== undefined ? data.player.estusMax : 5;
   player.bloodstain = data.player.bloodstain || null;
   player.lostRupiah = data.player.lostRupiah || 0;
-  // Souls-like v0.7.1: Restore rally and poise
   player.rallyHp = data.player.rallyHp || 0;
   player.rallyTimer = data.player.rallyTimer || 0;
   player.poise = data.player.poise !== undefined ? data.player.poise : player.maxPoise;
-  // Souls-like v0.7.1: Restore hollowing
   player.hollowing = data.player.hollowing || 0;
-  // Restore inventory
   if (data.inventory) {
     inventory.items = data.inventory.items || [];
     inventory.equipment = data.inventory.equipment || { weapon: null, armor: null, accessory: null };
@@ -193,23 +224,19 @@ function continueGame() {
     inventory.skillPoints = data.inventory.skillPoints || 0;
     inventory.allocatedStats = data.inventory.allocatedStats || { hp: 0, stamina: 0, energy: 0, attack: 0, defense: 0, speed: 0 };
   }
-  // Restore map progress
   if (data.clearedMaps) clearedMaps.splice(0, 5, ...data.clearedMaps);
   if (data.unlockedMaps) unlockedMaps.splice(0, 5, ...data.unlockedMaps);
   if (data.solvedPuzzles) {
     solvedPuzzles.clear();
     data.solvedPuzzles.forEach(id => solvedPuzzles.add(id));
   }
-  // Restore death count
   if (data.deathCount !== undefined) {
     deathCount.value = data.deathCount;
   }
 
-  // Go to map select
   gameState.value = 'mapSelect';
 }
 
-// Helper to auto-save
 function autoSave() {
   saveGame(player, inventory, deathCount.value, currentMapId, clearedMaps, unlockedMaps, solvedPuzzles);
   showSaveIndicator();
@@ -230,20 +257,26 @@ function showBossIntro() {
   resetBossIntroTimer();
 }
 
-// ---- MAIN GAME LOOP ----
-function gameLoop() {
+// ============================================================
+// MAIN GAME LOOP — Fixed timestep + Three.js render (Phase 2)
+// ============================================================
+
+/**
+ * Fixed-step game logic update.
+ * Called at 60Hz by the accumulator loop.
+ * All deterministic game logic (movement, combat, AI) runs here.
+ */
+function fixedStep() {
   gameTime++;
   setGameTime(gameTime);
 
   if (hitStop.value > 0) hitStop.value--;
   if (parryFlash.timer > 0) parryFlash.timer--;
 
-  // BUG FIX v0.7.0: Frame-based victory timer (replaces setTimeout)
-  // Added game state check to prevent victory timer from overriding game over state
+  // Frame-based victory timer
   if (typeof window !== 'undefined' && window.__nusaVictoryTimer) {
     window.__nusaVictoryTimer.frames--;
     if (window.__nusaVictoryTimer.frames <= 0) {
-      // Only transition to victory if not already in game over state
       if (gameState.value !== 'gameOver') {
         gameState.value = 'victory';
       }
@@ -251,18 +284,158 @@ function gameLoop() {
     }
   }
 
+  // ---- Game state machine (logic only, no rendering) ----
+  // Process timer-based logic for various states
+  if (gameState.value === 'loading') {
+    loadingTimer++;
+    if (loadingTimer >= MAP_LOAD_DURATION) {
+      startMap(loadingTargetMap);
+    }
+  } else if (gameState.value === 'bossSummon') {
+    bossSummonTimer++;
+    if (bossSummonTimer >= BOSS_SUMMON_DURATION) {
+      summonBoss(boss, currentMapId);
+      bossActive = true;
+      bossSummonTimer = 0;
+      showBossIntro();
+    }
+  } else if (gameState.value === 'playing') {
+    if (justPressed('Escape')) {
+      gameState.value = 'paused';
+      return;
+    }
+
+    let triggeredBossSummon = false;
+    if (justPressed('KeyE') && !bossActive && boss && !boss.alive) {
+      const altarPos = getBossAltarPosition(currentMapId);
+      const playerCenterX = player.x + player.w / 2;
+      const playerCenterY = player.y + player.h / 2;
+      const dx = Math.abs(playerCenterX - (altarPos.x + 16));
+      const dy = Math.abs(playerCenterY - (altarPos.y + 16));
+      if (dx < ALTAR_INTERACT_RANGE && dy < ALTAR_INTERACT_RANGE) {
+        triggeredBossSummon = true;
+      }
+    }
+
+    let triggeredDoorTransition = false;
+    if (justPressed('KeyE') && isDoorOpen(currentMapId) && currentMapId < 4) {
+      const doorPos = getExitDoorPosition(currentMapId);
+      const playerCenterX = player.x + player.w / 2;
+      const playerCenterY = player.y + player.h / 2;
+      const dx = Math.abs(playerCenterX - (doorPos.x + 16));
+      const dy = Math.abs(playerCenterY - (doorPos.y + 24));
+      if (dx < DOOR_INTERACT_RANGE && dy < DOOR_INTERACT_RANGE) {
+        triggeredDoorTransition = true;
+      }
+    }
+
+    if (triggeredBossSummon) {
+      bossSummonTimer = 0;
+      gameState.value = 'bossSummon';
+      playSound('boss');
+      return;
+    }
+
+    if (triggeredDoorTransition) {
+      loadingTargetMap = currentMapId + 1;
+      loadingTimer = 0;
+      gameState.value = 'loading';
+      return;
+    }
+
+    const triggerBoss = updatePlayer(keys, entities, boss, bossActive, getPuzzleState(), tileMap, doStartDialog, initPuzzleInternal);
+    if (triggerBoss === 'triggerBoss') {
+      bossActive = true;
+      playSound('boss');
+      showBossIntro();
+    }
+    updateEnemies(entities, hitStop.value, player);
+    updateBoss(boss, bossActive, hitStop.value, player);
+    updateParticles(hitStop.value, player, damagePlayer);
+    // Phase 3: Camera update with lock-on support
+    updateCamera(player, tileMap, entities, boss, bossActive);
+
+    // Phase 3: Lock-on targeting input
+    if (justPressed(LOCKON_KEY)) {
+      toggleLockOn(player, entities, boss, bossActive);
+      playSound('parry'); // Reuse parry sound for lock-on toggle
+    }
+    if (justPressed(LOCKON_SWITCH_KEY) && lockOn.active) {
+      switchLockOnTarget(player, entities, boss, bossActive, 1);
+      playSound('parry');
+    }
+    // Release lock-on when dodging or in menu states
+    if (lockOn.active && player.dodging) {
+      releaseLockOn();
+    }
+
+    // Phase 2: Rapier combat physics step
+    if (isRapierReady()) {
+      const combatEvents = updateCombatPhysics(player, entities, boss, bossActive);
+      // Process combat events (for future use — currently game logic handles
+      // damage through player.js/enemy.js distance checks; Rapier provides
+      // a parallel collision verification layer)
+      // TODO Phase 2.1: Wire combatEvents to damage functions
+    }
+
+    const ps = getPuzzleState();
+    if (ps && ps.solved) puzzleSolved = true;
+
+    while (bossDropQueue.length > 0) {
+      const drop = bossDropQueue.shift();
+      entities.push({
+        type: 'item', itemType: drop.type, subType: drop.subType,
+        x: boss.x, y: boss.y, w: 16, h: 16, collected: false, bobOffset: Math.random() * Math.PI * 2,
+      });
+    }
+
+    while (bossSummonQueue.length > 0) {
+      const summon = bossSummonQueue.shift();
+      const mapData = getMapData(currentMapId);
+      const enemyTypes = mapData ? mapData.enemyTypes : ['batu_kecil'];
+      for (let i = 0; i < summon.count; i++) {
+        const type = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
+        const offsetX = (Math.random() - 0.5) * 100;
+        const ety = boss ? boss.y : player.y;
+        entities.push(createEnemy(
+          Math.floor((boss.x + offsetX) / 32),
+          Math.floor(ety / 32) - 1,
+          type
+        ));
+      }
+      spawnFloatingText(boss.x + boss.w / 2, boss.y - 40, `+${summon.count} Musuh!`, C.red);
+    }
+
+    if (justPressed('Tab') || justPressed('KeyI')) {
+      gameState.value = 'inventory';
+      setInvTab(0);
+    }
+
+    if (inventory.skillPoints > 0 && justPressed('KeyL')) {
+      gameState.value = 'levelUp';
+    }
+  }
+}
+
+/**
+ * Render frame — called at display refresh rate (variable).
+ * Draws the current game state using Three.js.
+ */
+function renderFrame() {
+  // Screen shake
   let shakeX = 0, shakeY = 0;
   if (shake.timer > 0) {
-    shake.timer--;
     shakeX = (Math.random() - 0.5) * shake.intensity * 2;
     shakeY = (Math.random() - 0.5) * shake.intensity * 2;
   }
 
-  ctx.save();
-  ctx.translate(shakeX, shakeY);
+  // ---- Three.js: Begin frame (mark all meshes as stale) ----
+  beginFrame();
+  setShakeOffset(shakeX, shakeY);
 
   switch (gameState.value) {
     case 'menu': {
+      hudEl.style.display = 'none';
       const result = drawMenu();
       if (result === 'startGame') startGame();
       else if (result === 'continueGame') continueGame();
@@ -270,6 +443,7 @@ function gameLoop() {
     }
 
     case 'mapSelect': {
+      hudEl.style.display = 'none';
       const result = drawMapSelect(unlockedMaps, clearedMaps);
       if (result) {
         if (result.action === 'select') {
@@ -288,17 +462,11 @@ function gameLoop() {
     }
 
     case 'loading': {
-      loadingTimer++;
       drawLoadingScreen(loadingTimer);
-      if (loadingTimer >= MAP_LOAD_DURATION) {
-        startMap(loadingTargetMap);
-      }
       break;
     }
 
     case 'bossSummon': {
-      bossSummonTimer++;
-      // Draw game world + summon effect
       drawBackground();
       drawLevel(tileMap);
       drawItems(entities);
@@ -312,76 +480,11 @@ function gameLoop() {
       drawHUD(boss, bossActive, deathCount.value);
       drawMiniMap(tileMap, entities, boss, bossActive);
       drawBossSummonEffect(bossSummonTimer, boss);
-
-      if (bossSummonTimer >= BOSS_SUMMON_DURATION) {
-        summonBoss(boss, currentMapId);
-        bossActive = true;
-        bossSummonTimer = 0;
-        showBossIntro();
-      }
       break;
     }
 
     case 'playing': {
-      // ESC opens pause menu
-      if (justPressed('Escape')) {
-        gameState.value = 'paused';
-        break;
-      }
-
-      // Check for boss altar interaction (player presses E near altar)
-      let triggeredBossSummon = false;
-      if (justPressed('KeyE') && !bossActive && boss && !boss.alive) {
-        const altarPos = getBossAltarPosition(currentMapId);
-        const playerCenterX = player.x + player.w / 2;
-        const playerCenterY = player.y + player.h / 2;
-        const dx = Math.abs(playerCenterX - (altarPos.x + 16));
-        const dy = Math.abs(playerCenterY - (altarPos.y + 16));
-        if (dx < ALTAR_INTERACT_RANGE && dy < ALTAR_INTERACT_RANGE) {
-          triggeredBossSummon = true;
-        }
-      }
-
-      // Check for exit door interaction (player presses E near open door)
-      let triggeredDoorTransition = false;
-      if (justPressed('KeyE') && isDoorOpen(currentMapId) && currentMapId < 4) {
-        const doorPos = getExitDoorPosition(currentMapId);
-        const playerCenterX = player.x + player.w / 2;
-        const playerCenterY = player.y + player.h / 2;
-        const dx = Math.abs(playerCenterX - (doorPos.x + 16));
-        const dy = Math.abs(playerCenterY - (doorPos.y + 24));
-        if (dx < DOOR_INTERACT_RANGE && dy < DOOR_INTERACT_RANGE) {
-          triggeredDoorTransition = true;
-        }
-      }
-
-      if (triggeredBossSummon) {
-        // Start boss summon sequence
-        bossSummonTimer = 0;
-        gameState.value = 'bossSummon';
-        playSound('boss');
-        break;
-      }
-
-      if (triggeredDoorTransition) {
-        // Transition to next map
-        loadingTargetMap = currentMapId + 1;
-        loadingTimer = 0;
-        gameState.value = 'loading';
-        break;
-      }
-
-      const triggerBoss = updatePlayer(keys, entities, boss, bossActive, getPuzzleState(), tileMap, doStartDialog, initPuzzleInternal);
-      if (triggerBoss === 'triggerBoss') {
-        bossActive = true;
-        playSound('boss');
-        showBossIntro();
-      }
-      updateEnemies(entities, hitStop.value, player);
-      updateBoss(boss, bossActive, hitStop.value, player);
-      updateParticles(hitStop.value, player, damagePlayer);
-      updateCamera(player, tileMap);
-
+      // ---- RENDER ONLY ---- (game logic runs in fixedStep())
       drawBackground();
       drawLevel(tileMap);
       drawItems(entities);
@@ -395,52 +498,10 @@ function gameLoop() {
       drawHUD(boss, bossActive, deathCount.value);
       drawMiniMap(tileMap, entities, boss, bossActive);
       drawInteractionLabels(tileMap);
-
-      const ps = getPuzzleState();
-      if (ps && ps.solved) puzzleSolved = true;
-
-      // Process boss drop queue
-      while (bossDropQueue.length > 0) {
-        const drop = bossDropQueue.shift();
-        entities.push({
-          type: 'item', itemType: drop.type, subType: drop.subType,
-          x: boss.x, y: boss.y, w: 16, h: 16, collected: false, bobOffset: Math.random() * Math.PI * 2,
-        });
-      }
-
-      // Process boss summon queue
-      while (bossSummonQueue.length > 0) {
-        const summon = bossSummonQueue.shift();
-        const mapData = getMapData(currentMapId);
-        const enemyTypes = mapData ? mapData.enemyTypes : ['batu_kecil'];
-        for (let i = 0; i < summon.count; i++) {
-          const type = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
-          const offsetX = (Math.random() - 0.5) * 100;
-          const ety = boss ? boss.y : player.y;
-          entities.push(createEnemy(
-            Math.floor((boss.x + offsetX) / 32),
-            Math.floor(ety / 32) - 1,
-            type
-          ));
-        }
-        spawnFloatingText(boss.x + boss.w / 2, boss.y - 40, `+${summon.count} Musuh!`, C.red);
-      }
-
-      // Toggle inventory with TAB or I
-      if (justPressed('Tab') || justPressed('KeyI')) {
-        gameState.value = 'inventory';
-        setInvTab(0);
-      }
-
-      // Level up screen when skill points available
-      if (inventory.skillPoints > 0 && justPressed('KeyL')) {
-        gameState.value = 'levelUp';
-      }
       break;
     }
 
     case 'paused': {
-      // Draw game world frozen behind pause overlay
       drawBackground();
       drawLevel(tileMap);
       drawItems(entities);
@@ -459,7 +520,6 @@ function gameLoop() {
         if (pauseResult.action === 'resume') {
           gameState.value = 'playing';
         } else if (pauseResult.action === 'mainMenu') {
-          // Auto-save before returning to menu
           autoSave();
           gameState.value = 'menu';
         }
@@ -473,7 +533,6 @@ function gameLoop() {
         gameState.value = 'playing';
         if (result.callback) result.callback();
       } else if (result && result.chained) {
-        // Chained dialog — stay in dialog state, callback was for previous dialog
         if (result.callback) result.callback();
       }
 
@@ -501,13 +560,15 @@ function gameLoop() {
         gameState.value = 'playing';
         if (getPuzzleState()) getPuzzleState().solved = true;
         puzzleSolved = true;
-        // Mark puzzle as solved in map-manager
         markPuzzleSolved(`${currentMapId}_main`);
       }
       break;
     }
 
     case 'bossIntro': {
+      drawBackground();
+      drawLevel(tileMap);
+      drawPlayer(parryFlash.timer);
       const introResult = drawBossIntro(tileMap);
       if (introResult === 'finish') gameState.value = 'playing';
       break;
@@ -518,10 +579,8 @@ function gameLoop() {
       drawLevel(tileMap);
       const goResult = drawGameOver(deathCount.value);
       if (goResult === 'respawn') {
-        // Auto-save on death (souls-like: progress saved, rupiah lost)
         autoSave();
         respawnPlayer();
-        // Re-spawn entities and dormant boss
         const loaded = loadMap(currentMapId);
         entities = loaded.entities;
         boss = loaded.boss;
@@ -536,15 +595,12 @@ function gameLoop() {
       const vicResult = drawVictory(deathCount.value);
       if (vicResult === 'menu') gameState.value = 'menu';
       else if (vicResult === 'continue') {
-        // Mark boss as defeated
         if (!clearedMaps[currentMapId]) {
           markBossDefeated(currentMapId);
         }
         autoSave();
-        // Start boss defeat dialog, then unlock dialog
         const mapData = getMapData(currentMapId);
         startDialog('Arjuna', mapData.bossDefeatDialog, () => {
-          // After boss defeat dialog, play unlock dialog
           if (currentMapId < 4 && mapData.unlockNextDialog) {
             startDialog('???', mapData.unlockNextDialog, null, 'unlock', '#44FF44');
           }
@@ -555,7 +611,6 @@ function gameLoop() {
     }
 
     case 'inventory': {
-      // Draw game world paused
       drawBackground();
       drawLevel(tileMap);
       drawItems(entities);
@@ -567,7 +622,6 @@ function gameLoop() {
       drawParticles(particles, floatingTexts);
       drawHUD(boss, bossActive, deathCount.value);
 
-      // Draw inventory overlay
       const invResult = drawInventory();
       if (invResult) {
         if (invResult.action === 'close') {
@@ -591,11 +645,9 @@ function gameLoop() {
               const stats = getComputedStats(player.level);
               player.stamina = Math.min(stats.maxStamina, player.stamina + effect.value);
             }
-            // Buff potions are handled inside usePotion
           }
         } else if (invResult.action === 'allocate') {
           allocateStat(invResult.stat);
-          // Update player max stats after allocation
           const stats = getComputedStats(player.level);
           if (invResult.stat === 'hp') player.hp = Math.min(player.hp + 15, stats.maxHp);
           if (invResult.stat === 'stamina') player.stamina = Math.min(player.stamina + 8, stats.maxStamina);
@@ -606,7 +658,6 @@ function gameLoop() {
     }
 
     case 'shop': {
-      // Draw shop overlay
       const shopResult = drawShop();
       if (shopResult) {
         if (shopResult.action === 'close') {
@@ -614,7 +665,6 @@ function gameLoop() {
           shopFromStage = false;
           resetShopState();
         } else if (shopResult.action === 'buy') {
-          // Find item price
           let price = 0;
           if (shopResult.category === 'weapon' && WEAPONS[shopResult.itemId]) price = WEAPONS[shopResult.itemId].price;
           else if (shopResult.category === 'armor' && ARMORS[shopResult.itemId]) price = ARMORS[shopResult.itemId].price;
@@ -631,13 +681,11 @@ function gameLoop() {
     }
 
     case 'levelUp': {
-      // Draw game world paused
       drawBackground();
       drawLevel(tileMap);
       drawPlayer(parryFlash.timer);
       drawHUD(boss, bossActive, deathCount.value);
 
-      // Draw level up overlay
       const luResult = drawLevelUp();
       if (luResult) {
         if (luResult.action === 'close') {
@@ -654,10 +702,72 @@ function gameLoop() {
     }
   }
 
-  ctx.restore();
+  // ---- Three.js: End frame (remove stale meshes, render scene) ----
+  endFrame();
+
+  // Phase 5: Update atmosphere per frame
+  updateStageLighting(gameTime, currentMapId);
+  if (lockOn.active && lockOn.target) {
+    updateShadowCamera(camera.focusX, camera.focusY);
+  } else {
+    updateShadowCamera(camera.focusX, camera.focusY);
+  }
+
+  // Phase 5: Update post-processing (vignette at low HP, etc.)
+  const stats = getComputedStats(player.level);
+  const hpRatio = stats.maxHp > 0 ? player.hp / stats.maxHp : 1;
+  const nearArtifact = player.artifacts > 0 && player.x > 0; // Simplified check
+  updatePostProcessing(hpRatio, nearArtifact, gameTime);
+
+  // Phase 5: Render with post-processing pipeline
+  if (isPostProcessingActive()) {
+    renderWithPostProcessing();
+  } else {
+    render();
+  }
+}
+
+/**
+ * Main loop with fixed timestep (Phase 2).
+ *
+ * Physics/game logic runs at 60Hz (FIXED_DT = 1/60).
+ * Rendering runs at display refresh rate (variable).
+ *
+ * Pattern:
+ *   1. Calculate time since last frame
+ *   2. Accumulate time
+ *   3. While accumulator >= FIXED_DT:
+ *      a. Run fixed step (game logic + Rapier physics)
+ *      b. Subtract FIXED_DT from accumulator
+ *   4. Render frame (Three.js) with interpolation
+ *   5. Request next animation frame
+ */
+function gameLoop(now) {
+  // Calculate delta time (seconds)
+  if (lastFrameTime === 0) lastFrameTime = now;
+  const delta = Math.min((now - lastFrameTime) / 1000, MAX_ACCUMULATOR);
+  lastFrameTime = now;
+  physicsAccumulator += delta;
+
+  // ---- Fixed timestep: game logic at 60Hz ----
+  while (physicsAccumulator >= FIXED_DT) {
+    fixedStep();
+    physicsAccumulator -= FIXED_DT;
+    physicsStepCount++;
+    // Safety: prevent spiral of death
+    if (physicsStepCount > 5) {
+      physicsAccumulator = 0;
+      physicsStepCount = 0;
+      break;
+    }
+  }
+  physicsStepCount = 0;
+
+  // ---- Variable timestep: render at display rate ----
+  renderFrame();
+
+  // ---- Post-frame cleanup ----
   savePrevKeys();
-  // BUG FIX v0.7.0: Auto-reset mouse.clicked each frame to prevent
-  // spurious clicks on screen transitions
   mouse.clicked = false;
   requestAnimationFrame(gameLoop);
 }
@@ -665,4 +775,4 @@ function gameLoop() {
 // ---- START ----
 loadingEl.style.display = 'none';
 if (typeof window.__nusaLoaded === 'function') window.__nusaLoaded();
-gameLoop();
+requestAnimationFrame(gameLoop);

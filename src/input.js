@@ -22,6 +22,7 @@ export function setupInput(canvas) {
     'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
     'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyE', 'KeyQ', 'KeyF', 'KeyR',
     'ShiftLeft', 'ShiftRight', 'Tab', 'Escape', 'Enter',
+    'KeyT', 'KeyY', 'KeyG', 'KeyH', 'KeyI', 'KeyL',
   ];
 
   window.addEventListener('keydown', e => {

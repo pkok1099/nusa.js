@@ -5,8 +5,8 @@
 //            Max 2 tiles wide so player can jump over.
 //            Use tile 8 (decoration) for visual lava glow above ground.
 
-import { TILE } from '../js/config.js';
-import { createEnemy, createItem, createNPC, createPuzzleTrigger } from '../js/entities.js';
+import { TILE } from '../config.js';
+import { createEnemy, createItem, createNPC, createPuzzleTrigger } from '../entities.js';
 
 export const MAP_DATA = {
   id: 2,

@@ -1,24 +1,24 @@
 {
-  "name": "nusa-js",
-  "version": "0.8.0",
+  "name": "nusantara-3d",
+  "version": "0.9.0-3d-phase5",
   "type": "module",
-  "description": "NUSANTARA: Warisan Terakhir — Souls-like Adventure RPG + Puzzle bertema mitologi Nusantara",
-  "main": "index.html",
+  "description": "NUSANTARA: Warisan Terakhir — Souls-like Adventure RPG + Puzzle (Three.js + Rapier Migration)",
   "scripts": {
-    "dev": "npx serve . -l 8000",
-    "build": "node build.js",
-    "start": "npx serve ."
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "keywords": [
     "game",
-    "html5",
-    "canvas",
+    "three.js",
+    "rapier",
     "souls-like",
     "platformer",
     "indonesia",
     "nusantara",
     "rpg",
-    "puzzle"
+    "puzzle",
+    "3d"
   ],
   "author": "Nusa.js Team",
   "license": "MIT",
@@ -26,11 +26,11 @@
     "type": "git",
     "url": "https://github.com/pkok1099/nusa.js.git"
   },
-  "devDependencies": {
-    "rollup": "^4.60.4",
-    "@rollup/plugin-node-resolve": "^16.0.0"
-  },
   "dependencies": {
-    "docx": "^9.7.1"
+    "three": "^0.170.0",
+    "@dimforge/rapier3d-compat": "^0.14.0"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
   }
 }
