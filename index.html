@@ -45,10 +45,10 @@ canvas{display:block;margin:auto;image-rendering:pixelated}
 <!-- Cache-bust: append version to prevent stale cached modules -->
 <script>
   // Inject version into all module URLs to bust browser cache
-  window.__nusaVersion = '0.7.4';
+  window.__nusaVersion = '0.8.0';
   var _origFetch = window.fetch;
   window.fetch = function(url, opts) {
-    if (typeof url === 'string' && url.indexOf('/js/') >= 0 && url.indexOf('?v=') < 0 && url.indexOf('t=') < 0) {
+    if (typeof url === 'string' && (url.indexOf('/js/') >= 0 || url.indexOf('/map/') >= 0) && url.indexOf('?v=') < 0 && url.indexOf('t=') < 0) {
       url = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'v=' + window.__nusaVersion;
     }
     return _origFetch.call(this, url, opts);
@@ -56,7 +56,7 @@ canvas{display:block;margin:auto;image-rendering:pixelated}
 </script>
 
 <!-- ES Module Entry Point — browser native, no build tool needed -->
-<script type="module" src="js/game.js?v=0.7.4"></script>
+<script type="module" src="js/game.js?v=0.8.0"></script>
 
 <!-- Fallback: if module fails to load, show error with diagnostics -->
 <script>

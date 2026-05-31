@@ -2,16 +2,20 @@
 // game.js — Main game state machine, initialization, and loop
 // ============================================================
 
-import { GAME_W, GAME_H, STAGES, WEAPONS, ARMORS, ACCESSORIES, POTIONS, C } from './config.js';
+import { GAME_W, GAME_H, WEAPONS, ARMORS, ACCESSORIES, POTIONS, C,
+         MAP_LOAD_DURATION, BOSS_SUMMON_DURATION, DOOR_INTERACT_RANGE, ALTAR_INTERACT_RANGE } from './config.js';
+import { MAP_REGISTRY, loadMap, summonBoss, isBossDefeated, isDoorOpen, getMapData,
+         currentMapId, clearedMaps, unlockedMaps, solvedPuzzles,
+         markBossDefeated, markPuzzleSolved, isPuzzleSolved,
+         getBossAltarPosition, getExitDoorPosition, resetProgress } from './map-manager.js';
 import { initAudio, playSound } from './audio.js';
 import { keys, savePrevKeys, setupInput, justPressed, mouse } from './input.js';
 import { setTileMap } from './physics.js';
 import { camera, updateCamera } from './camera.js';
 import { particles, floatingTexts, updateParticles, clearParticles, spawnFloatingText, setDamageCallbacks } from './particles.js';
 import { initRenderer } from './renderer.js';
-import { generateLevel } from './level.js';
-import { spawnEntities, createBoss, createEnemy } from './entities.js';
-import { player, updatePlayer, damagePlayer, damageEnemy, damageBoss, gainExp, resetPlayer, respawnPlayer, setStateRefs, bossDropQueue, setClearedStagesRef } from './player.js';
+import { player, updatePlayer, damagePlayer, damageEnemy, damageBoss, gainExp, resetPlayer, respawnPlayer, setStateRefs, bossDropQueue } from './player.js';
+import { createEnemy } from './entities.js';
 import { updateEnemies, setEnemyShakeRef } from './enemy.js';
 import { updateBoss } from './boss.js';
 import { bossSummonQueue } from './boss.js';
@@ -23,7 +27,8 @@ import {
   drawBackground, drawLevel, drawPlayer, drawEnemies, drawBoss,
   drawItems, drawNPCs, drawPuzzleTriggers, drawParticles, drawHUD,
   drawDialog, drawMenu, drawPuzzle, drawBossIntro, drawGameOver, drawVictory,
-  drawInventory, drawShop, drawStageSelect, drawLevelUp, drawPauseMenu,
+  drawInventory, drawShop, drawMapSelect, drawLoadingScreen, drawBossSummonEffect,
+  drawInteractionLabels, drawLevelUp, drawPauseMenu,
   setGameTime, resetBossIntroTimer, resetGameOverTimer, setCurrentStageId, setInvTab,
   showSaveIndicator, drawMiniMap, drawBloodstain,
 } from './draw-game.js';
@@ -38,10 +43,9 @@ const deathCount = { value: 0 };
 
 // Wire up state refs for player module
 setStateRefs(gameState, hitStop, shake, parryFlash, deathCount);
-setClearedStagesRef(clearedStages);
 setEnemyShakeRef(shake);
 import { setOnCheckpoint } from './player.js';
-setOnCheckpoint(() => { autoSave(currentStageId); });
+setOnCheckpoint(() => { autoSave(); });
 
 // BUG FIX v0.6.2: Wire up particle damage callbacks so player arrows
 // can hit enemies and bosses
@@ -60,19 +64,17 @@ let tileMap = [];
 let boss = null;
 let bossActive = false;
 let puzzleSolved = false;
-let currentStageId = 0;
-let shopFromStage = false; // true if shop opened from stage select, false if from level
+let shopFromStage = false; // true if shop opened from map select, false if from level
 
-// Game progress - which stages are unlocked
-let unlockedStages = [true, false, false, false, false];
-// Track which stages have been cleared (boss defeated) — for artifact counting
-// Boss can still be re-fought for grinding, but artifact only awarded once
-let clearedStages = [false, false, false, false, false];
+// Map system variables
+let loadingTargetMap = 0;
+let loadingTimer = 0;
+let bossSummonTimer = 0;
 
 // ---- Canvas setup ----
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-const loading = document.getElementById('loading');
+const loadingEl = document.getElementById('loading');
 initRenderer(ctx);
 setupInput(canvas);
 
@@ -88,30 +90,27 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-// ---- Game init ----
-function startStage(stageId) {
-  currentStageId = stageId;
-  setCurrentStageId(stageId);
-  player.currentStageId = stageId;
+// ---- Map start function (replaces startStage) ----
+function startMap(mapId) {
+  const mapData = getMapData(mapId);
 
-  initAudio();
-  gameState.value = 'playing';
-  tileMap = generateLevel(stageId);
-  setTileMap(tileMap);
-  entities = spawnEntities(stageId);
-
-  const stage = STAGES[stageId];
-  const bossX = [73, 80, 90, 100, 110][stageId] || 73;
-  const bossY = stage.height - 6;
-  boss = createBoss(bossX, bossY, stageId);
+  // Load map using map-manager (this also sets currentMapId internally)
+  const loaded = loadMap(mapId);
+  tileMap = loaded.tileMap;
+  entities = loaded.entities;
+  boss = loaded.boss;
   bossActive = false;
+  bossSummonTimer = 0;
+
   resetPuzzle();
   puzzleSolved = false;
 
-  // Set player position to start of level
+  // Set player position from map data
   const stats = getComputedStats(player.level);
-  player.x = 80;
-  player.y = (stage.height - 3) * 32 - player.h;
+  player.currentStageId = mapId; // keep for compatibility
+  setCurrentStageId(mapId);
+  player.x = mapData.playerStartX * 32;
+  player.y = mapData.playerStartY * 32 - player.h;
   player.prevY = player.y;
   player.checkpoint = { x: player.x, y: player.y };
   player.vx = 0;
@@ -121,37 +120,39 @@ function startStage(stageId) {
   player.hp = stats.maxHp;
   player.stamina = stats.maxStamina;
   player.energy = stats.maxEnergy;
+  // Refill estus when starting a new map
+  player.estus = player.estusMax;
+  // Reset combat state
   player.poisonTimer = 0;
   player.stunTimer = 0;
   player.slowTimer = 0;
   player.combatTimer = 0;
   player.inCombat = false;
   player.staminaRegenDelay = 0;
-  // Refill estus when starting a new stage
-  player.estus = player.estusMax;
 
   camera.x = 0; camera.y = 0;
   clearParticles();
   hitStop.value = 0;
   parryFlash.timer = 0;
 
-  // Intro dialog
-  const speaker = stageId === 0 ? 'Candra Kirana' :
-    stageId === 1 ? 'Penjaga Hutan' :
-    stageId === 2 ? 'Pendeta Api' :
-    stageId === 3 ? 'Nyi Roro Kidul' : 'Resi Wisrawa';
-  doStartDialog(speaker, stage.introDialog);
+  gameState.value = 'playing';
+
+  // Play intro dialog
+  const speaker = mapId === 0 ? 'Candra Kirana' :
+    mapId === 1 ? 'Penjaga Hutan' :
+    mapId === 2 ? 'Pendeta Api' :
+    mapId === 3 ? 'Nyi Roro Kidul' : 'Resi Wisrawa';
+  doStartDialog(speaker, mapData.introDialog);
 }
 
 function startGame() {
   resetPlayer();
   resetInventory();
-  unlockedStages = [true, false, false, false, false];
-  clearedStages = [false, false, false, false, false];
+  resetProgress(); // reset map-manager progress
   deathCount.value = 0;
   // Delete old save when starting new game
   deleteSaveGame();
-  gameState.value = 'stageSelect';
+  gameState.value = 'mapSelect';
 }
 
 function continueGame() {
@@ -192,26 +193,25 @@ function continueGame() {
     inventory.skillPoints = data.inventory.skillPoints || 0;
     inventory.allocatedStats = data.inventory.allocatedStats || { hp: 0, stamina: 0, energy: 0, attack: 0, defense: 0, speed: 0 };
   }
-  // Restore unlocked stages
-  if (data.unlockedStages) {
-    unlockedStages = data.unlockedStages;
-  }
-  // Restore cleared stages
-  if (data.clearedStages) {
-    clearedStages = data.clearedStages;
+  // Restore map progress
+  if (data.clearedMaps) clearedMaps.splice(0, 5, ...data.clearedMaps);
+  if (data.unlockedMaps) unlockedMaps.splice(0, 5, ...data.unlockedMaps);
+  if (data.solvedPuzzles) {
+    solvedPuzzles.clear();
+    data.solvedPuzzles.forEach(id => solvedPuzzles.add(id));
   }
   // Restore death count
   if (data.deathCount !== undefined) {
     deathCount.value = data.deathCount;
   }
 
-  // Go to stage select
-  gameState.value = 'stageSelect';
+  // Go to map select
+  gameState.value = 'mapSelect';
 }
 
 // Helper to auto-save
-function autoSave(currentStageId) {
-  saveGame(player, inventory, unlockedStages, deathCount.value, currentStageId, clearedStages);
+function autoSave() {
+  saveGame(player, inventory, deathCount.value, currentMapId, clearedMaps, unlockedMaps, solvedPuzzles);
   showSaveIndicator();
 }
 
@@ -221,7 +221,7 @@ function doStartDialog(speaker, lines) {
 }
 
 function initPuzzleInternal() {
-  initPuzzle(currentStageId);
+  initPuzzle(currentMapId);
   gameState.value = 'puzzle';
 }
 
@@ -269,11 +269,13 @@ function gameLoop() {
       break;
     }
 
-    case 'stageSelect': {
-      const result = drawStageSelect(unlockedStages);
+    case 'mapSelect': {
+      const result = drawMapSelect(unlockedMaps, clearedMaps);
       if (result) {
         if (result.action === 'select') {
-          startStage(result.stageId);
+          loadingTargetMap = result.mapId;
+          loadingTimer = 0;
+          gameState.value = 'loading';
         } else if (result.action === 'shop') {
           gameState.value = 'shop';
           shopFromStage = true;
@@ -285,10 +287,87 @@ function gameLoop() {
       break;
     }
 
+    case 'loading': {
+      loadingTimer++;
+      drawLoadingScreen(loadingTimer);
+      if (loadingTimer >= MAP_LOAD_DURATION) {
+        startMap(loadingTargetMap);
+      }
+      break;
+    }
+
+    case 'bossSummon': {
+      bossSummonTimer++;
+      // Draw game world + summon effect
+      drawBackground();
+      drawLevel(tileMap);
+      drawItems(entities);
+      drawPuzzleTriggers(entities);
+      drawNPCs(entities);
+      drawEnemies(entities);
+      drawBoss(boss, bossActive);
+      drawPlayer(parryFlash.timer);
+      drawBloodstain();
+      drawParticles(particles, floatingTexts);
+      drawHUD(boss, bossActive, deathCount.value);
+      drawMiniMap(tileMap, entities, boss, bossActive);
+      drawBossSummonEffect(bossSummonTimer, boss);
+
+      if (bossSummonTimer >= BOSS_SUMMON_DURATION) {
+        summonBoss(boss, currentMapId);
+        bossActive = true;
+        bossSummonTimer = 0;
+        showBossIntro();
+      }
+      break;
+    }
+
     case 'playing': {
       // ESC opens pause menu
       if (justPressed('Escape')) {
         gameState.value = 'paused';
+        break;
+      }
+
+      // Check for boss altar interaction (player presses E near altar)
+      let triggeredBossSummon = false;
+      if (justPressed('KeyE') && !bossActive && boss && !boss.alive) {
+        const altarPos = getBossAltarPosition(currentMapId);
+        const playerCenterX = player.x + player.w / 2;
+        const playerCenterY = player.y + player.h / 2;
+        const dx = Math.abs(playerCenterX - (altarPos.x + 16));
+        const dy = Math.abs(playerCenterY - (altarPos.y + 16));
+        if (dx < ALTAR_INTERACT_RANGE && dy < ALTAR_INTERACT_RANGE) {
+          triggeredBossSummon = true;
+        }
+      }
+
+      // Check for exit door interaction (player presses E near open door)
+      let triggeredDoorTransition = false;
+      if (justPressed('KeyE') && isDoorOpen(currentMapId) && currentMapId < 4) {
+        const doorPos = getExitDoorPosition(currentMapId);
+        const playerCenterX = player.x + player.w / 2;
+        const playerCenterY = player.y + player.h / 2;
+        const dx = Math.abs(playerCenterX - (doorPos.x + 16));
+        const dy = Math.abs(playerCenterY - (doorPos.y + 24));
+        if (dx < DOOR_INTERACT_RANGE && dy < DOOR_INTERACT_RANGE) {
+          triggeredDoorTransition = true;
+        }
+      }
+
+      if (triggeredBossSummon) {
+        // Start boss summon sequence
+        bossSummonTimer = 0;
+        gameState.value = 'bossSummon';
+        playSound('boss');
+        break;
+      }
+
+      if (triggeredDoorTransition) {
+        // Transition to next map
+        loadingTargetMap = currentMapId + 1;
+        loadingTimer = 0;
+        gameState.value = 'loading';
         break;
       }
 
@@ -315,6 +394,7 @@ function gameLoop() {
       drawParticles(particles, floatingTexts);
       drawHUD(boss, bossActive, deathCount.value);
       drawMiniMap(tileMap, entities, boss, bossActive);
+      drawInteractionLabels(tileMap);
 
       const ps = getPuzzleState();
       if (ps && ps.solved) puzzleSolved = true;
@@ -331,8 +411,8 @@ function gameLoop() {
       // Process boss summon queue
       while (bossSummonQueue.length > 0) {
         const summon = bossSummonQueue.shift();
-        const stage = STAGES[currentStageId];
-        const enemyTypes = stage ? stage.enemyTypes : ['batu_kecil'];
+        const mapData = getMapData(currentMapId);
+        const enemyTypes = mapData ? mapData.enemyTypes : ['batu_kecil'];
         for (let i = 0; i < summon.count; i++) {
           const type = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
           const offsetX = (Math.random() - 0.5) * 100;
@@ -380,7 +460,7 @@ function gameLoop() {
           gameState.value = 'playing';
         } else if (pauseResult.action === 'mainMenu') {
           // Auto-save before returning to menu
-          autoSave(currentStageId);
+          autoSave();
           gameState.value = 'menu';
         }
       }
@@ -391,6 +471,9 @@ function gameLoop() {
       const result = updateDialog();
       if (result && result.done) {
         gameState.value = 'playing';
+        if (result.callback) result.callback();
+      } else if (result && result.chained) {
+        // Chained dialog — stay in dialog state, callback was for previous dialog
         if (result.callback) result.callback();
       }
 
@@ -418,6 +501,8 @@ function gameLoop() {
         gameState.value = 'playing';
         if (getPuzzleState()) getPuzzleState().solved = true;
         puzzleSolved = true;
+        // Mark puzzle as solved in map-manager
+        markPuzzleSolved(`${currentMapId}_main`);
       }
       break;
     }
@@ -434,12 +519,12 @@ function gameLoop() {
       const goResult = drawGameOver(deathCount.value);
       if (goResult === 'respawn') {
         // Auto-save on death (souls-like: progress saved, rupiah lost)
-        autoSave(currentStageId);
+        autoSave();
         respawnPlayer();
-        entities = spawnEntities(currentStageId);
-        const bossX = [73, 80, 90, 100, 110][currentStageId] || 73;
-        const stage = STAGES[currentStageId];
-        boss = createBoss(bossX, stage.height - 6, currentStageId);
+        // Re-spawn entities and dormant boss
+        const loaded = loadMap(currentMapId);
+        entities = loaded.entities;
+        boss = loaded.boss;
         bossActive = false;
         resetGameOverTimer();
       }
@@ -450,18 +535,21 @@ function gameLoop() {
     case 'victory': {
       const vicResult = drawVictory(deathCount.value);
       if (vicResult === 'menu') gameState.value = 'menu';
-      else if (vicResult === 'stageSelect') {
-        // Mark stage as cleared (for artifact tracking)
-        if (!clearedStages[currentStageId]) {
-          clearedStages[currentStageId] = true;
+      else if (vicResult === 'continue') {
+        // Mark boss as defeated
+        if (!clearedMaps[currentMapId]) {
+          markBossDefeated(currentMapId);
         }
-        // Unlock next stage (always, even if already cleared — idempotent)
-        if (currentStageId < 4) {
-          unlockedStages[currentStageId + 1] = true;
-        }
-        // Auto-save on victory (boss defeated)
-        autoSave(currentStageId);
-        gameState.value = 'stageSelect';
+        autoSave();
+        // Start boss defeat dialog, then unlock dialog
+        const mapData = getMapData(currentMapId);
+        startDialog('Arjuna', mapData.bossDefeatDialog, () => {
+          // After boss defeat dialog, play unlock dialog
+          if (currentMapId < 4 && mapData.unlockNextDialog) {
+            startDialog('???', mapData.unlockNextDialog, null, 'unlock', '#44FF44');
+          }
+        }, 'bossDefeat', '#FFD700');
+        gameState.value = 'dialog';
       }
       break;
     }
@@ -485,7 +573,7 @@ function gameLoop() {
         if (invResult.action === 'close') {
           gameState.value = 'playing';
         } else if (invResult.action === 'save') {
-          autoSave(currentStageId);
+          autoSave();
         } else if (invResult.action === 'equip') {
           equipItem(invResult.index);
         } else if (invResult.action === 'unequip') {
@@ -522,7 +610,7 @@ function gameLoop() {
       const shopResult = drawShop();
       if (shopResult) {
         if (shopResult.action === 'close') {
-          gameState.value = shopFromStage ? 'stageSelect' : 'playing';
+          gameState.value = shopFromStage ? 'mapSelect' : 'playing';
           shopFromStage = false;
           resetShopState();
         } else if (shopResult.action === 'buy') {
@@ -575,6 +663,6 @@ function gameLoop() {
 }
 
 // ---- START ----
-loading.style.display = 'none';
+loadingEl.style.display = 'none';
 if (typeof window.__nusaLoaded === 'function') window.__nusaLoaded();
 gameLoop();

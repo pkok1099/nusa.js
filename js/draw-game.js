@@ -2,7 +2,7 @@
 // draw-game.js — All game rendering functions
 // ============================================================
 
-import { C, GAME_W, GAME_H, TILE, PARRY_DURATION, PARRY_WINDOW, HEAVY_ATTACK_WINDUP, HEAVY_ATTACK_DURATION, COMBO_1_DURATION, COMBO_2_DURATION, COMBO_3_DURATION, BOSS_RECOVERY_FRAMES, STAGES, STAT_NAMES, STAT_LABELS, STAT_PER_POINT, HOLLOWING_MAX_LEVEL, VISCERAL_DURATION } from './config.js';
+import { C, GAME_W, GAME_H, TILE, PARRY_DURATION, PARRY_WINDOW, HEAVY_ATTACK_WINDUP, HEAVY_ATTACK_DURATION, COMBO_1_DURATION, COMBO_2_DURATION, COMBO_3_DURATION, BOSS_RECOVERY_FRAMES, STAGES, STAT_NAMES, STAT_LABELS, STAT_PER_POINT, HOLLOWING_MAX_LEVEL, VISCERAL_DURATION, TILE_PUZZLE_DOOR, TILE_EXIT_DOOR, TILE_BOSS_ALTAR, MAP_LOAD_DURATION, BOSS_SUMMON_DURATION } from './config.js';
 import { drawText, drawRect, drawBar, drawOutline, getCtx } from './renderer.js';
 import { camera } from './camera.js';
 import { player } from './player.js';
@@ -14,6 +14,8 @@ import { inventory, getComputedStats, getEquippedWeapon, getEquippedArmor, getEq
 import { shopItems, shopState, TAB_NAMES, buyItem, sellItem, getCurrentTabItems, resetShopState } from './shop.js';
 import { WEAPONS, ARMORS, ACCESSORIES, POTIONS } from './config.js';
 import { hasSaveGame } from './save.js';
+import { MAP_REGISTRY, isBossDefeated, isDoorOpen } from './map-manager.js';
+import { getNearbyInteractable } from './player.js';
 
 let gameTime = 0;
 let currentStageId = 0;
@@ -208,6 +210,68 @@ export function drawLevel(tileMap) {
         ctx.fillStyle = C.gold + '80';
         ctx.beginPath(); ctx.arc(sx + TILE / 2, sy + 4 - flameH / 3, 3, 0, Math.PI * 2); ctx.fill();
         if (gameTime % 20 === 0) spawnParticle(sx + TILE / 2 + camera.x, sy + camera.y, C.goldLight, 1, 1, 20);
+      } else if (tile === 10) {
+        // Puzzle door — ornate archway with glow
+        const doorPulse = Math.sin(gameTime * 0.06) * 0.3 + 0.7;
+        drawRect(sx, sy, TILE, TILE, '#1A1A0A');
+        drawRect(sx + 2, sy + 2, TILE - 4, TILE - 4, C.gold + '30');
+        // Door frame
+        drawRect(sx, sy, 4, TILE, C.goldDark);
+        drawRect(sx + TILE - 4, sy, 4, TILE, C.goldDark);
+        drawRect(sx, sy, TILE, 4, C.gold);
+        // Glow effect
+        ctx.fillStyle = `rgba(212, 175, 55, ${doorPulse * 0.15})`;
+        ctx.fillRect(sx - 4, sy - 4, TILE + 8, TILE + 8);
+        // "?" symbol
+        drawText('?', sx + TILE / 2, sy + TILE / 2, 16, C.gold, 'center');
+      } else if (tile === 11) {
+        // Exit door — large gate
+        const gatePulse = Math.sin(gameTime * 0.05) * 0.3 + 0.7;
+        // Check if this door is open (boss defeated)
+        const doorOpen = isDoorOpen(currentStageId);
+        if (doorOpen) {
+          // Open gate — green glow
+          drawRect(sx, sy, TILE, TILE, '#0A1A0A');
+          ctx.fillStyle = `rgba(68, 255, 68, ${gatePulse * 0.2})`;
+          ctx.fillRect(sx - 2, sy - 2, TILE + 4, TILE + 4);
+          drawRect(sx, sy, 4, TILE, C.gold);
+          drawRect(sx + TILE - 4, sy, 4, TILE, C.gold);
+          drawText('→', sx + TILE / 2, sy + TILE / 2, 18, C.green, 'center');
+        } else {
+          // Locked gate — red glow
+          drawRect(sx, sy, TILE, TILE, '#1A0A0A');
+          ctx.fillStyle = `rgba(255, 68, 68, ${gatePulse * 0.15})`;
+          ctx.fillRect(sx - 2, sy - 2, TILE + 4, TILE + 4);
+          drawRect(sx, sy, 4, TILE, C.stoneDark);
+          drawRect(sx + TILE - 4, sy, 4, TILE, C.stoneDark);
+          drawRect(sx, sy, TILE, 6, C.stone);
+          drawText('✕', sx + TILE / 2, sy + TILE / 2, 14, C.red + '80', 'center');
+        }
+      } else if (tile === 12) {
+        // Boss altar — glowing summoning circle
+        const altarPulse = Math.sin(gameTime * 0.08) * 0.3 + 0.7;
+        // Base platform
+        drawRect(sx + 2, sy + 8, TILE - 4, TILE - 8, '#2A1A0A');
+        drawRect(sx + 4, sy + 10, TILE - 8, TILE - 12, C.goldDark);
+        // Summoning circle glow
+        ctx.fillStyle = `rgba(255, 68, 68, ${altarPulse * 0.2})`;
+        ctx.beginPath();
+        ctx.arc(sx + TILE / 2, sy + TILE / 2, 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = `rgba(212, 175, 55, ${altarPulse * 0.3})`;
+        ctx.beginPath();
+        ctx.arc(sx + TILE / 2, sy + TILE / 2, 8, 0, Math.PI * 2);
+        ctx.fill();
+        // Central rune
+        drawText('◆', sx + TILE / 2, sy + TILE / 2, 10, C.goldLight, 'center');
+        // Outer glow ring
+        ctx.strokeStyle = `rgba(255, 68, 68, ${altarPulse * 0.3})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(sx + TILE / 2, sy + TILE / 2, 16 + Math.sin(gameTime * 0.1) * 2, 0, Math.PI * 2);
+        ctx.stroke();
+        // Occasional particle
+        if (gameTime % 30 === 0) spawnParticle(sx + TILE / 2 + camera.x, sy + camera.y, C.goldLight, 1, 1, 20);
       }
     }
   }
@@ -982,6 +1046,9 @@ export function drawMiniMap(tileMap, entities, boss, bossActive) {
       else if (tile === 5) color = C.grass + '60';
       else if (tile === 6) color = C.grassLight + '60';
       else if (tile === 9) color = C.gold + 'AA';
+      else if (tile === 10) color = C.gold + '80';
+      else if (tile === 11) color = C.green + '80';
+      else if (tile === 12) color = C.red + '80';
       ctx.fillStyle = color;
       ctx.fillRect(px, py, Math.max(1, scaleX), Math.max(1, scaleY));
     }
@@ -1459,7 +1526,7 @@ export function drawMenu() {
     drawText('[ESC] Kembali', GAME_W / 2, GAME_H - 110, 12, C.textDim, 'center');
   }
 
-  drawText('v0.7.4 — Pause Menu & Bug Fixes', GAME_W / 2, GAME_H - 30, 9, C.textDim, 'center');
+  drawText('v0.8.0 — Map System Redesign', GAME_W / 2, GAME_H - 30, 9, C.textDim, 'center');
 
   if (justPressed('ArrowUp') || justPressed('KeyW')) menuSelection = (menuSelection - 1 + menuItems.length) % menuItems.length;
   if (justPressed('ArrowDown') || justPressed('KeyS')) menuSelection = (menuSelection + 1) % menuItems.length;
@@ -1493,44 +1560,303 @@ export function drawPuzzle(pState, gainExpFn) {
   drawRect(0, 0, GAME_W, GAME_H, '#000000CC');
   const stageName = STAGES[currentStageId]?.name || 'Candi Borobudur';
   drawText(`PUZZLE ${stageName.toUpperCase()}`, GAME_W / 2, 60, 20, C.gold, 'center');
-  const seqLen = pState.sequence.length;
-  drawText(`Ulangi urutan ${seqLen} simbol elemen!`, GAME_W / 2, 85, 12, C.textDim, 'center');
+  drawText(pState.instructions || `Ulangi urutan ${pState.sequence?.length || 0} simbol elemen!`, GAME_W / 2, 85, 12, C.textDim, 'center');
   drawRect(40, 120, GAME_W - 80, 300, '#0A0A0A90', 8);
   drawOutline(40, 120, GAME_W - 80, 300, C.gold + '30', 2, 8);
 
-  if (pState.showingSequence) {
-    pState.showTimer++;
-    if (pState.showTimer > 40) { pState.showTimer = 0; pState.showIndex++; if (pState.showIndex >= pState.sequence.length) pState.showingSequence = false; }
-    if (pState.showIndex < pState.sequence.length) {
-      drawText(pState.symbols[pState.sequence[pState.showIndex]], GAME_W / 2, 240, 60, '#fff', 'center');
-      drawText(`Urutan ${pState.showIndex + 1}/${pState.sequence.length}`, GAME_W / 2, 290, 14, C.textDim, 'center');
-    }
-  } else if (pState.solved) {
+  // Puzzle type-specific rendering
+  const puzzleType = pState.type || 'gamelan_sequence';
+
+  // --- Shared: solved state ---
+  if (pState.solved) {
     drawText('PUZZLE SELESAI!', GAME_W / 2, 240, 28, C.green, 'center');
     drawText('[E] Lanjutkan', GAME_W / 2, 290, 14, C.gold, 'center');
-    if (justPressed('KeyE') || justPressed('Space')) { playSound('pickup'); gainExpFn(20 + seqLen * 5); return 'continue'; }
-  } else if (pState.failed) {
-    drawText('GAGAL! Coba lagi...', GAME_W / 2, 240, 24, C.red, 'center');
-    pState.failTimer++;
-    if (pState.failTimer > 60) { pState.playerSeq = []; pState.failed = false; pState.failTimer = 0; pState.showingSequence = true; pState.showIndex = 0; pState.showTimer = 0; }
-  } else {
-    pState.buttons.forEach((btn, i) => {
-      const isHighlighted = pState.highlight === i;
-      const isHovered = mouse.x >= btn.x && mouse.x <= btn.x + btn.w && mouse.y >= btn.y && mouse.y <= btn.y + btn.h;
-      drawRect(btn.x, btn.y, btn.w, btn.h, isHighlighted ? C.gold + '40' : (isHovered ? C.gold + '20' : '#1A1A0A'), 8);
-      drawOutline(btn.x, btn.y, btn.w, btn.h, isHighlighted ? C.gold : C.gold + '30', 2, 8);
-      drawText(btn.symbol, btn.x + btn.w / 2, btn.y + btn.h / 2 - 5, 28, '#fff', 'center');
-      if ((isHovered && mouse.clicked) || justPressed(`Digit${i + 1}`)) {
-        pState.highlight = i; pState.highlightTimer = 15;
-        pState.playerSeq.push(i); playSound('dialog');
-        const idx = pState.playerSeq.length - 1;
-        if (pState.playerSeq[idx] !== pState.sequence[idx]) { pState.failed = true; pState.failTimer = 0; playSound('damage'); }
-        else if (pState.playerSeq.length === pState.sequence.length) { pState.solved = true; playSound('puzzle'); }
-      }
-    });
-    if (pState.highlightTimer > 0) { pState.highlightTimer--; if (pState.highlightTimer <= 0) pState.highlight = -1; }
-    drawText(`Urutan: ${pState.playerSeq.length}/${pState.sequence.length}`, GAME_W / 2, 360, 14, C.text, 'center');
+    if (justPressed('KeyE') || justPressed('Space')) {
+      playSound('pickup');
+      const reward = pState.reward || (20 + (pState.sequence?.length || 3) * 5);
+      gainExpFn(reward);
+      return 'continue';
+    }
+    mouse.clicked = false;
+    return null;
   }
+
+  // --- Shared: failed state ---
+  if (pState.failed) {
+    drawText('GAGAL! Coba lagi...', GAME_W / 2, 240, 24, C.red, 'center');
+    pState.failTimer = (pState.failTimer || 0) + 1;
+    if (pState.failTimer > 60) {
+      pState.playerSeq = [];
+      pState.failed = false;
+      pState.failTimer = 0;
+      if (puzzleType === 'gamelan_sequence') {
+        pState.showingSequence = true;
+        pState.showIndex = 0;
+        pState.showTimer = 0;
+      }
+    }
+    mouse.clicked = false;
+    return null;
+  }
+
+  // --- Type-specific rendering ---
+  switch (puzzleType) {
+    case 'kawi_decipher': {
+      // Kawi Decipher — number sequence input
+      const target = pState.sequence || [];
+      const input = pState.playerSeq || [];
+
+      drawText('Dekripsi Aksara Kawi', GAME_W / 2, 145, 14, C.goldLight, 'center');
+      drawText('Masukkan angka yang benar:', GAME_W / 2, 170, 11, C.textDim, 'center');
+
+      // Show target sequence with blanks
+      let seqDisplay = '';
+      for (let i = 0; i < target.length; i++) {
+        if (i < input.length) {
+          seqDisplay += `[${input[i]}] `;
+        } else if (i === input.length) {
+          seqDisplay += '[_] ';
+        } else {
+          seqDisplay += ' ?  ';
+        }
+      }
+      drawText(seqDisplay, GAME_W / 2, 220, 18, C.text, 'center');
+
+      // Number input buttons (0-9)
+      const numStartX = GAME_W / 2 - 150;
+      const numStartY = 260;
+      for (let n = 0; n < 10; n++) {
+        const bx = numStartX + (n % 5) * 65;
+        const by = numStartY + Math.floor(n / 5) * 55;
+        const isHovered = mouse.x >= bx && mouse.x <= bx + 55 && mouse.y >= by && mouse.y <= by + 45;
+        drawRect(bx, by, 55, 45, isHovered ? C.gold + '30' : '#1A1A0A', 6);
+        drawOutline(bx, by, 55, 45, C.gold + '40', 1, 6);
+        drawText(`${n}`, bx + 27, by + 22, 22, isHovered ? C.gold : C.text, 'center');
+        if (isHovered && mouse.clicked) {
+          pState.playerSeq = pState.playerSeq || [];
+          pState.playerSeq.push(n);
+          playSound('dialog');
+          const idx = pState.playerSeq.length - 1;
+          if (pState.playerSeq[idx] !== target[idx]) {
+            pState.failed = true; pState.failTimer = 0; playSound('damage');
+          } else if (pState.playerSeq.length === target.length) {
+            pState.solved = true; playSound('puzzle');
+          }
+        }
+      }
+
+      // Backspace
+      drawRect(GAME_W / 2 - 40, 380, 80, 30, C.red + '20', 4);
+      drawText('Hapus', GAME_W / 2, 395, 11, C.red + '80', 'center');
+      if (justPressed('Backspace') && pState.playerSeq && pState.playerSeq.length > 0) {
+        pState.playerSeq.pop();
+      }
+      drawText(`Input: ${input.length}/${target.length}`, GAME_W / 2, 415, 11, C.textDim, 'center');
+      break;
+    }
+
+    case 'batik_pattern': {
+      // Batik Pattern — match the pattern grid with missing tile
+      const grid = pState.grid || [];
+      const options = pState.options || [];
+      const missingIdx = pState.missingIdx || 0;
+
+      drawText('Lengkapi Pola Batik', GAME_W / 2, 145, 14, C.goldLight, 'center');
+
+      // Draw grid
+      const gridSize = grid.length;
+      const cellSize = 40;
+      const gridStartX = GAME_W / 2 - (gridSize * cellSize) / 2;
+      const gridStartY = 170;
+      for (let r = 0; r < gridSize; r++) {
+        for (let c = 0; c < gridSize; c++) {
+          const gx = gridStartX + c * cellSize;
+          const gy = gridStartY + r * cellSize;
+          const idx = r * gridSize + c;
+          if (idx === missingIdx) {
+            drawRect(gx, gy, cellSize - 2, cellSize - 2, '#1A1A0A', 4);
+            drawOutline(gx, gy, cellSize - 2, cellSize - 2, C.gold + '60', 2, 4);
+            drawText('?', gx + cellSize / 2 - 1, gy + cellSize / 2, 18, C.gold, 'center');
+          } else {
+            const cellColor = grid[idx] || C.stone;
+            drawRect(gx, gy, cellSize - 2, cellSize - 2, cellColor, 4);
+            drawOutline(gx, gy, cellSize - 2, cellSize - 2, C.gold + '20', 1, 4);
+          }
+        }
+      }
+
+      // Draw options
+      drawText('Pilih:', GAME_W / 2, gridStartY + gridSize * cellSize + 15, 12, C.gold, 'center');
+      const optStartX = GAME_W / 2 - (options.length * 60) / 2;
+      const optY = gridStartY + gridSize * cellSize + 35;
+      for (let i = 0; i < options.length; i++) {
+        const ox = optStartX + i * 60;
+        const isHovered = mouse.x >= ox && mouse.x <= ox + 50 && mouse.y >= optY && mouse.y <= optY + 50;
+        drawRect(ox, optY, 50, 50, options[i], 6);
+        drawOutline(ox, optY, 50, 50, isHovered ? C.gold : C.gold + '30', 2, 6);
+        if (isHovered && mouse.clicked) {
+          playSound('dialog');
+          if (i === pState.correctOption) {
+            pState.solved = true; playSound('puzzle');
+          } else {
+            pState.failed = true; pState.failTimer = 0; playSound('damage');
+          }
+        }
+      }
+      break;
+    }
+
+    case 'water_channels': {
+      // Water Channels — rotatable pipe tiles
+      const pipes = pState.pipes || [];
+      const pGridW = pState.gridW || 4;
+      const pGridH = pState.gridH || 4;
+      const cellSz = 50;
+
+      drawText('Alirkan Air — Putar Pipa', GAME_W / 2, 145, 14, C.goldLight, 'center');
+
+      const gStartX = GAME_W / 2 - (pGridW * cellSz) / 2;
+      const gStartY = 170;
+      for (let r = 0; r < pGridH; r++) {
+        for (let c = 0; c < pGridW; c++) {
+          const idx = r * pGridW + c;
+          const pipe = pipes[idx];
+          const px = gStartX + c * cellSz;
+          const py = gStartY + r * cellSz;
+          const isHovered = mouse.x >= px && mouse.x <= px + cellSz - 2 && mouse.y >= py && mouse.y <= py + cellSz - 2;
+
+          drawRect(px, py, cellSz - 2, cellSz - 2, isHovered ? '#1A2A3A' : '#0A1A2A', 4);
+          drawOutline(px, py, cellSz - 2, cellSz - 2, C.cyan + '30', 1, 4);
+
+          // Draw pipe based on type and rotation
+          if (pipe) {
+            const rotation = pipe.rotation || 0;
+            const cx = px + cellSz / 2 - 1;
+            const cy = py + cellSz / 2 - 1;
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(rotation * Math.PI / 2);
+            const pipeColor = pipe.connected ? C.cyan : '#4A6A8A';
+            ctx.fillStyle = pipeColor;
+            // Draw pipe arms based on type
+            if (pipe.type === 'straight') {
+              ctx.fillRect(-3, -cellSz / 2 + 4, 6, cellSz - 8);
+            } else if (pipe.type === 'corner') {
+              ctx.fillRect(-3, -3, 6, cellSz / 2 - 2);
+              ctx.fillRect(-3, -3, cellSz / 2 - 2, 6);
+            } else if (pipe.type === 't_junction') {
+              ctx.fillRect(-3, -cellSz / 2 + 4, 6, cellSz - 8);
+              ctx.fillRect(-3, -3, cellSz / 2 - 2, 6);
+            } else if (pipe.type === 'cross') {
+              ctx.fillRect(-3, -cellSz / 2 + 4, 6, cellSz - 8);
+              ctx.fillRect(-cellSz / 2 + 4, -3, cellSz - 8, 6);
+            }
+            ctx.restore();
+          }
+
+          // Click to rotate
+          if (isHovered && mouse.clicked && pipe) {
+            pipe.rotation = ((pipe.rotation || 0) + 1) % 4;
+            playSound('dialog');
+            // Check if solved after rotation
+            if (pState.checkSolved && pState.checkSolved()) {
+              pState.solved = true; playSound('puzzle');
+            }
+          }
+        }
+      }
+
+      // Submit check
+      drawRect(GAME_W / 2 - 50, gStartY + pGridH * cellSz + 15, 100, 30, C.gold + '20', 4);
+      drawText('Cek', GAME_W / 2, gStartY + pGridH * cellSz + 30, 12, C.gold, 'center');
+      if (mouse.clicked && mouse.x >= GAME_W / 2 - 50 && mouse.x <= GAME_W / 2 + 50 &&
+          mouse.y >= gStartY + pGridH * cellSz + 15 && mouse.y <= gStartY + pGridH * cellSz + 45) {
+        if (pState.checkSolved && pState.checkSolved()) {
+          pState.solved = true; playSound('puzzle');
+        } else {
+          pState.failed = true; pState.failTimer = 0; playSound('damage');
+        }
+      }
+      break;
+    }
+
+    case 'dewata_riddle': {
+      // Dewata Riddle — multiple choice riddle
+      const riddle = pState.riddle || '...';
+      const choices = pState.choices || [];
+
+      drawText('Teka-teki Dewata', GAME_W / 2, 145, 14, C.goldLight, 'center');
+
+      // Riddle text (word wrap manually)
+      const words = riddle.split(' ');
+      let line = '';
+      let lineY = 180;
+      words.forEach(word => {
+        const testLine = line + word + ' ';
+        if (testLine.length > 35) {
+          drawText(line, GAME_W / 2, lineY, 13, C.text, 'center');
+          line = word + ' ';
+          lineY += 20;
+        } else {
+          line = testLine;
+        }
+      });
+      if (line) drawText(line, GAME_W / 2, lineY, 13, C.text, 'center');
+
+      // Choices
+      const choiceStartY = lineY + 40;
+      for (let i = 0; i < choices.length; i++) {
+        const cy = choiceStartY + i * 45;
+        const choiceW = 400;
+        const choiceX = GAME_W / 2 - choiceW / 2;
+        const isHovered = mouse.x >= choiceX && mouse.x <= choiceX + choiceW && mouse.y >= cy && mouse.y <= cy + 38;
+        drawRect(choiceX, cy, choiceW, 38, isHovered ? C.gold + '20' : '#1A1A0A', 6);
+        drawOutline(choiceX, cy, choiceW, 38, isHovered ? C.gold + '60' : C.gold + '20', 1, 6);
+        drawText(choices[i], GAME_W / 2, cy + 19, 13, isHovered ? C.gold : C.text, 'center');
+        if (isHovered && mouse.clicked) {
+          playSound('dialog');
+          if (i === pState.correctChoice) {
+            pState.solved = true; playSound('puzzle');
+          } else {
+            pState.failed = true; pState.failTimer = 0; playSound('damage');
+          }
+        }
+      }
+      break;
+    }
+
+    case 'gamelan_sequence':
+    default: {
+      // Gamelan Sequence — original symbol memory puzzle
+      if (pState.showingSequence) {
+        pState.showTimer++;
+        if (pState.showTimer > 40) { pState.showTimer = 0; pState.showIndex++; if (pState.showIndex >= pState.sequence.length) pState.showingSequence = false; }
+        if (pState.showIndex < pState.sequence.length) {
+          drawText(pState.symbols[pState.sequence[pState.showIndex]], GAME_W / 2, 240, 60, '#fff', 'center');
+          drawText(`Urutan ${pState.showIndex + 1}/${pState.sequence.length}`, GAME_W / 2, 290, 14, C.textDim, 'center');
+        }
+      } else {
+        pState.buttons.forEach((btn, i) => {
+          const isHighlighted = pState.highlight === i;
+          const isHovered = mouse.x >= btn.x && mouse.x <= btn.x + btn.w && mouse.y >= btn.y && mouse.y <= btn.y + btn.h;
+          drawRect(btn.x, btn.y, btn.w, btn.h, isHighlighted ? C.gold + '40' : (isHovered ? C.gold + '20' : '#1A1A0A'), 8);
+          drawOutline(btn.x, btn.y, btn.w, btn.h, isHighlighted ? C.gold : C.gold + '30', 2, 8);
+          drawText(btn.symbol, btn.x + btn.w / 2, btn.y + btn.h / 2 - 5, 28, '#fff', 'center');
+          if ((isHovered && mouse.clicked) || justPressed(`Digit${i + 1}`)) {
+            pState.highlight = i; pState.highlightTimer = 15;
+            pState.playerSeq.push(i); playSound('dialog');
+            const idx = pState.playerSeq.length - 1;
+            if (pState.playerSeq[idx] !== pState.sequence[idx]) { pState.failed = true; pState.failTimer = 0; playSound('damage'); }
+            else if (pState.playerSeq.length === pState.sequence.length) { pState.solved = true; playSound('puzzle'); }
+          }
+        });
+        if (pState.highlightTimer > 0) { pState.highlightTimer--; if (pState.highlightTimer <= 0) pState.highlight = -1; }
+        drawText(`Urutan: ${pState.playerSeq.length}/${pState.sequence.length}`, GAME_W / 2, 360, 14, C.text, 'center');
+      }
+      break;
+    }
+  }
+
   mouse.clicked = false;
   return null;
 }
@@ -1623,8 +1949,8 @@ export function drawVictory(deathCount) {
   drawText(`Arjuna mendapatkan ${stage.artifact}`, GAME_W / 2, 305, 12, C.textDim, 'center');
   drawText(`Level: ${player.level}  |  HP: ${Math.ceil(player.hp)}  |  Rupiah: ${player.rupiah}  |  Kematian: ${deathCount}`, GAME_W / 2, 370, 12, C.gold + '80', 'center');
 
-  if (currentStageId < 4) {
-    drawText('Tahap berikutnya terbuka!', GAME_W / 2, 400, 14, C.green, 'center');
+  if (currentStageId < MAP_REGISTRY.length - 1) {
+    drawText('Peta berikutnya terbuka!', GAME_W / 2, 400, 14, C.green, 'center');
   } else {
     drawText('SEMUA ARTEFAK TELAH DIKUMPULKAN!', GAME_W / 2, 400, 18, C.goldLight, 'center');
     drawText('Arjuna telah menyelamatkan Nusantara!', GAME_W / 2, 425, 12, C.text, 'center');
@@ -1633,7 +1959,7 @@ export function drawVictory(deathCount) {
   drawText('[SPACE] Lanjutkan', GAME_W / 2, 460, 14, C.gold, 'center');
   drawText('[ESC] Menu Utama', GAME_W / 2, 485, 12, C.textDim, 'center');
   if (justPressed('Escape')) return 'menu';
-  if (justPressed('Space')) return currentStageId < 4 ? 'stageSelect' : 'menu';
+  if (justPressed('Space')) return currentStageId < MAP_REGISTRY.length - 1 ? 'continue' : 'menu';
   return null;
 }
 
@@ -1768,4 +2094,198 @@ export function drawPauseMenu() {
   }
 
   return null;
+}
+
+// ---- MAP SELECT (Replaces drawStageSelect for the new map system) ----
+export function drawMapSelect(unlockedMaps, clearedMaps) {
+  const ctx = getCtx();
+  const grad = ctx.createLinearGradient(0, 0, 0, GAME_H);
+  grad.addColorStop(0, '#0A0A0A'); grad.addColorStop(0.5, '#0D0A1A'); grad.addColorStop(1, '#0A0A0A');
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, GAME_W, GAME_H);
+
+  // Floating particles
+  for (let i = 0; i < 20; i++) {
+    const x = (i * 137 + gameTime * 0.3) % GAME_W;
+    const y = (i * 97 + gameTime * 0.2) % GAME_H;
+    ctx.fillStyle = C.gold + '30'; ctx.fillRect(x, y, 2, 2);
+  }
+
+  drawText('PILIH PETA', GAME_W / 2, 40, 28, C.gold, 'center');
+  drawText(`Rupiah: ${player.rupiah}  |  Level: ${player.level}  |  Artefak: ${player.artifacts}/5`, GAME_W / 2, 70, 12, C.goldLight + '80', 'center');
+
+  // Shop button
+  drawRect(GAME_W - 150, 20, 120, 35, C.gold + '20', 6);
+  drawOutline(GAME_W - 150, 20, 120, 35, C.gold + '60', 1, 6);
+  drawText('Toko', GAME_W - 90, 37, 14, C.gold, 'center');
+  if (mouse.clicked && mouse.x >= GAME_W - 150 && mouse.x <= GAME_W - 30 && mouse.y >= 20 && mouse.y <= 55) {
+    return { action: 'shop' };
+  }
+
+  // Map cards
+  let mapResult = null;
+  for (let i = 0; i < MAP_REGISTRY.length; i++) {
+    const mapData = MAP_REGISTRY[i];
+    const cx = 60 + (i % 3) * 290;
+    const cy = 100 + Math.floor(i / 3) * 180;
+    const isUnlocked = unlockedMaps[i];
+    const isCleared = clearedMaps[i];
+    const isSelected = mouse.x >= cx && mouse.x <= cx + 270 && mouse.y >= cy && mouse.y <= cy + 160;
+
+    drawRect(cx, cy, 270, 160, isUnlocked ? (isSelected ? mapData.bg2 + 'CC' : mapData.bg2 + '80') : '#1A1A1A', 8);
+    drawOutline(cx, cy, 270, 160, isUnlocked ? C.gold + '40' : C.gold + '15', 2, 8);
+
+    if (isUnlocked) {
+      drawText(mapData.name, cx + 135, cy + 30, 18, C.gold, 'center');
+      drawText(mapData.subtitle, cx + 135, cy + 52, 10, C.textDim, 'center');
+      drawText(`Boss: ${mapData.bossName}`, cx + 135, cy + 78, 11, C.red + '80', 'center');
+      drawText(`Artefak: ${mapData.artifact}`, cx + 135, cy + 96, 10, C.goldLight + '80', 'center');
+      if (isCleared) {
+        drawText('DIBERSIHKAN ✓', cx + 135, cy + 116, 12, C.green, 'center');
+      }
+      // Stage color accent
+      ctx.fillStyle = mapData.bg1 + '40';
+      ctx.fillRect(cx + 4, cy + 130, 262, 26);
+      if (isSelected && mouse.clicked) {
+        mapResult = { action: 'select', mapId: i };
+        break;
+      }
+    } else {
+      drawText('TERKUNCI', cx + 135, cy + 60, 20, C.textDim, 'center');
+      drawText('Kalahkan boss peta sebelumnya', cx + 135, cy + 90, 10, C.textDim, 'center');
+      drawRect(cx + 125, cy + 105, 20, 20, C.stoneDark + '60');
+      drawRect(cx + 128, cy + 115, 14, 10, C.stone + '40');
+    }
+  }
+
+  // Back button
+  drawRect(GAME_W / 2 - 60, GAME_H - 45, 120, 30, C.gold + '15', 6);
+  drawOutline(GAME_W / 2 - 60, GAME_H - 45, 120, 30, C.gold + '30', 1, 6);
+  drawText('[ESC] Menu', GAME_W / 2, GAME_H - 30, 11, C.gold, 'center');
+
+  if (justPressed('Escape')) {
+    return { action: 'menu' };
+  }
+  return mapResult;
+}
+
+// ---- LOADING SCREEN ----
+export function drawLoadingScreen(timer) {
+  const ctx = getCtx();
+  // Dark background
+  ctx.fillStyle = '#0A0A0A';
+  ctx.fillRect(0, 0, GAME_W, GAME_H);
+  
+  // Floating ember particles
+  for (let i = 0; i < 15; i++) {
+    const x = (i * 173 + timer * 0.5) % GAME_W;
+    const y = (i * 131 + timer * 0.3) % GAME_H;
+    const alpha = Math.sin(timer * 0.05 + i) * 0.3 + 0.3;
+    ctx.fillStyle = C.gold + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+    ctx.fillRect(x, y, 2, 2);
+  }
+  
+  // Title
+  drawText('MEMUAT PETA...', GAME_W / 2, GAME_H / 2 - 30, 24, C.gold, 'center');
+  
+  // Progress bar
+  const progress = timer / MAP_LOAD_DURATION;
+  const barW = 300, barH = 12;
+  const barX = GAME_W / 2 - barW / 2;
+  const barY = GAME_H / 2 + 10;
+  drawRect(barX, barY, barW, barH, '#1A1A0A', 6);
+  drawRect(barX, barY, Math.floor(barW * progress), barH, C.gold, 6);
+  drawOutline(barX, barY, barW, barH, C.gold + '40', 1, 6);
+  
+  // Loading text
+  const dots = '.'.repeat(Math.floor(timer / 20) % 4);
+  drawText(`Memuat${dots}`, GAME_W / 2, barY + 30, 11, C.textDim, 'center');
+}
+
+// ---- BOSS SUMMON EFFECT ----
+export function drawBossSummonEffect(timer, bossEntity) {
+  const ctx = getCtx();
+  
+  // Dim overlay
+  const dimAlpha = Math.min(0.5, timer / 60);
+  ctx.fillStyle = `rgba(0, 0, 0, ${dimAlpha})`;
+  ctx.fillRect(0, 0, GAME_W, GAME_H);
+  
+  // Summon circles expanding from altar position
+  if (bossEntity) {
+    const altarX = bossEntity.x + bossEntity.w / 2 - camera.x;
+    const altarY = bossEntity.y + bossEntity.h / 2 - camera.y;
+    
+    // Expanding ring
+    const ringRadius = timer * 2;
+    const ringAlpha = Math.max(0, 1 - timer / BOSS_SUMMON_DURATION);
+    ctx.strokeStyle = `rgba(255, 68, 68, ${ringAlpha})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(altarX, altarY, ringRadius, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Second ring (delayed)
+    if (timer > 20) {
+      const ring2Radius = (timer - 20) * 2;
+      ctx.strokeStyle = `rgba(212, 175, 55, ${ringAlpha * 0.7})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(altarX, altarY, ring2Radius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    
+    // Lightning effects (random lines)
+    if (timer % 6 === 0) {
+      spawnParticle(altarX + camera.x + (Math.random() - 0.5) * 80, 
+                    altarY + camera.y - Math.random() * 60,
+                    C.gold + 'AA', 3, 2, 15);
+    }
+    
+    // Central glow
+    const glowSize = 20 + Math.sin(timer * 0.2) * 10;
+    const glowAlpha = 0.3 + Math.sin(timer * 0.15) * 0.2;
+    ctx.fillStyle = `rgba(255, 68, 68, ${glowAlpha})`;
+    ctx.beginPath();
+    ctx.arc(altarX, altarY, glowSize, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = `rgba(212, 175, 55, ${glowAlpha * 0.5})`;
+    ctx.beginPath();
+    ctx.arc(altarX, altarY, glowSize * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Text
+  if (timer > 30) {
+    const textAlpha = Math.min(1, (timer - 30) / 30);
+    ctx.globalAlpha = textAlpha;
+    drawText('BOSS DIPANGGIL!', GAME_W / 2, GAME_H / 2 - 80, 28, C.red, 'center');
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ---- INTERACTION LABELS ----
+export function drawInteractionLabels(tileMap) {
+  if (!tileMap) return;
+  const nearby = getNearbyInteractable(tileMap);
+  if (!nearby) return;
+  
+  const ctx = getCtx();
+  const nx = nearby.x - camera.x;
+  const ny = nearby.y - camera.y;
+  const alpha = Math.sin(gameTime * 0.1) * 0.3 + 0.7;
+  
+  ctx.globalAlpha = alpha;
+  if (nearby.type === 'bossAltar') {
+    drawText('[E] Panggil Boss', nx + 16, ny - 20, 11, C.red, 'center');
+  } else if (nearby.type === 'exitDoor') {
+    const doorOpen = isDoorOpen(currentStageId);
+    if (doorOpen) {
+      drawText('[E] Peta Berikutnya', nx + 16, ny - 20, 11, C.green, 'center');
+    } else {
+      drawText('Terkunci', nx + 16, ny - 20, 10, C.red + '80', 'center');
+    }
+  } else if (nearby.type === 'puzzleDoor') {
+    drawText('[E] Puzzle', nx + 16, ny - 20, 11, C.gold, 'center');
+  }
+  ctx.globalAlpha = 1;
 }

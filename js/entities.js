@@ -106,6 +106,31 @@ export function createPuzzleTrigger(x, y) {
   };
 }
 
+// Boss Altar entity — player interacts to summon the boss
+export function createBossAltar(x, y, mapId) {
+  return {
+    type: 'bossAltar',
+    x: x * TILE, y: y * TILE,
+    w: 32, h: 32,
+    mapId: mapId,
+    activated: false, // becomes true after boss is summoned
+    bobOffset: Math.random() * Math.PI * 2,
+  };
+}
+
+// Map Door entity — exit door to next map
+export function createMapDoor(x, y, targetMapId, doorType) {
+  return {
+    type: 'mapDoor',
+    x: x * TILE, y: y * TILE,
+    w: 32, h: 48,
+    targetMapId: targetMapId,
+    doorType: doorType, // 'exit' or 'puzzle'
+    open: false, // becomes true when boss defeated (for exit doors)
+    bobOffset: Math.random() * Math.PI * 2,
+  };
+}
+
 export function createBoss(x, y, stageId) {
   const stage = STAGES[stageId] || STAGES[0];
   return {

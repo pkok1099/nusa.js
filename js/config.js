@@ -8,6 +8,11 @@ export const GAME_H = 540;
 export const TILE = 32;
 export const LEVEL_H = 20;
 
+// New tile types for map system v0.8.0
+export const TILE_PUZZLE_DOOR = 10;  // Door to puzzle room
+export const TILE_EXIT_DOOR = 11;    // Exit door to next map
+export const TILE_BOSS_ALTAR = 12;   // Boss summon altar
+
 // Physics
 export const GRAVITY = 0.55;
 export const MAX_FALL = 12;
@@ -194,6 +199,12 @@ export const WATER_SPEED_MULT = 0.6;
 
 // Buff system
 export const MAX_ACTIVE_BUFFS = 3;
+
+// Map transition system v0.8.0
+export const MAP_LOAD_DURATION = 90;      // Frames for loading screen (1.5s)
+export const BOSS_SUMMON_DURATION = 120;  // Frames for boss summon animation (2s)
+export const DOOR_INTERACT_RANGE = 60;    // Pixel distance to interact with doors
+export const ALTAR_INTERACT_RANGE = 60;   // Pixel distance to interact with boss altar
 
 // ---- SOULS-LIKE SYSTEM v0.7.0 ----
 // Estus Flask (healing item that refills at checkpoints)

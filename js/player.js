@@ -35,6 +35,7 @@ import {
   VISCERAL_WINDOW, VISCERAL_DAMAGE_MULT, VISCERAL_RANGE, VISCERAL_DURATION,
   TWO_HAND_DAMAGE_MULT, TWO_HAND_STAMINA_PENALTY,
 } from './config.js';
+import { TILE_BOSS_ALTAR, TILE_EXIT_DOOR, TILE_PUZZLE_DOOR, ALTAR_INTERACT_RANGE, DOOR_INTERACT_RANGE } from './config.js';
 import { playSound } from './audio.js';
 import { justPressed, keys as inputKeys } from './input.js';
 import { tileCollision, getTileType, setDropThrough } from './physics.js';
@@ -699,6 +700,77 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
         }
       });
     }
+
+    // ---- BOSS ALTAR INTERACTION ----
+    // Check if player is standing on or near a boss altar tile
+    if (!interacted) {
+      const altarTx = Math.floor((player.x + player.w / 2) / 32);
+      const altarTy = Math.floor((player.y + player.h) / 32);
+      // Check current tile and nearby tiles for boss altar
+      for (let dy = -1; dy <= 0; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const tx = altarTx + dx;
+          const ty = altarTy + dy;
+          if (tileMap && ty >= 0 && ty < tileMap.length && tx >= 0 && tx < tileMap[0].length) {
+            if (tileMap[ty][tx] === TILE_BOSS_ALTAR) {
+              const altarPx = tx * 32;
+              const altarPy = ty * 32;
+              const dist = Math.abs((player.x + player.w / 2) - (altarPx + 16));
+              if (dist < ALTAR_INTERACT_RANGE && justPressed('KeyE')) {
+                interacted = true;
+                return 'interactAltar';
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // ---- EXIT DOOR INTERACTION ----
+    if (!interacted) {
+      const doorTx = Math.floor((player.x + player.w / 2) / 32);
+      const doorTy = Math.floor((player.y + player.h) / 32);
+      for (let dy = -1; dy <= 0; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const tx = doorTx + dx;
+          const ty = doorTy + dy;
+          if (tileMap && ty >= 0 && ty < tileMap.length && tx >= 0 && tx < tileMap[0].length) {
+            if (tileMap[ty][tx] === TILE_EXIT_DOOR) {
+              const doorPx = tx * 32;
+              const doorPy = ty * 32;
+              const dist = Math.abs((player.x + player.w / 2) - (doorPx + 16));
+              if (dist < DOOR_INTERACT_RANGE && justPressed('KeyE')) {
+                interacted = true;
+                return 'interactExitDoor';
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // ---- PUZZLE DOOR INTERACTION ----
+    if (!interacted) {
+      const pTx = Math.floor((player.x + player.w / 2) / 32);
+      const pTy = Math.floor((player.y + player.h) / 32);
+      for (let dy = -1; dy <= 0; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const tx = pTx + dx;
+          const ty = pTy + dy;
+          if (tileMap && ty >= 0 && ty < tileMap.length && tx >= 0 && tx < tileMap[0].length) {
+            if (tileMap[ty][tx] === TILE_PUZZLE_DOOR) {
+              const doorPx = tx * 32;
+              const dist = Math.abs((player.x + player.w / 2) - (doorPx + 16));
+              if (dist < DOOR_INTERACT_RANGE && justPressed('KeyE')) {
+                interacted = true;
+                return 'interactPuzzleDoor';
+              }
+            }
+          }
+        }
+      }
+    }
+
     if (!interacted && !player.dodging && !player.attacking && !player.heavyAttacking && player.parryTimer <= 0) {
       // Souls-like v0.7.1: Two-handing prevents Estus use
       if (player.twoHanding) {
@@ -842,12 +914,9 @@ export function updatePlayer(keys, entities, boss, bossActive, puzzleState, tile
   else if (Math.abs(player.vx) > 0.5) player.state = 'run';
   else player.state = 'idle';
 
-  // Boss trigger - check puzzle or just position for later stages
-  const stageId = player.currentStageId || 0;
-  const triggerX = [68, 75, 82, 90, 100][stageId] || 68;
-  if (player.x > triggerX * 32 && (stageId === 0 ? (puzzleState && puzzleState.solved) : true) && !bossActive && boss && boss.alive) {
-    return 'triggerBoss';
-  }
+  // Boss is no longer auto-triggered by position.
+  // Instead, player must interact with boss altar (E key) to summon.
+  // Boss trigger is handled by 'interactAltar' return value.
   return null;
 }
 
@@ -1273,4 +1342,31 @@ export function respawnPlayer() {
   player.weaponArtCooldown = 0; player.weaponArtType = null;
   // Estus is NOT refilled on respawn (only at bonfires)
   gameStateRef.value = 'playing';
+}
+
+// Get nearby interactable info for HUD display
+export function getNearbyInteractable(tileMap) {
+  if (!tileMap) return null;
+  const cx = Math.floor((player.x + player.w / 2) / 32);
+  const cy = Math.floor((player.y + player.h) / 32);
+
+  for (let dy = -1; dy <= 0; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const tx = cx + dx;
+      const ty = cy + dy;
+      if (ty >= 0 && ty < tileMap.length && tx >= 0 && tx < tileMap[0].length) {
+        const tile = tileMap[ty][tx];
+        if (tile === TILE_BOSS_ALTAR) {
+          return { type: 'bossAltar', x: tx * 32, y: ty * 32 };
+        }
+        if (tile === TILE_EXIT_DOOR) {
+          return { type: 'exitDoor', x: tx * 32, y: ty * 32 };
+        }
+        if (tile === TILE_PUZZLE_DOOR) {
+          return { type: 'puzzleDoor', x: tx * 32, y: ty * 32 };
+        }
+      }
+    }
+  }
+  return null;
 }

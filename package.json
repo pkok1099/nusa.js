@@ -1,6 +1,6 @@
 {
   "name": "nusa-js",
-  "version": "0.7.4",
+  "version": "0.8.0",
   "type": "module",
   "description": "NUSANTARA: Warisan Terakhir — Souls-like Adventure RPG + Puzzle bertema mitologi Nusantara",
   "main": "index.html",
@@ -29,5 +29,8 @@
   "devDependencies": {
     "rollup": "^4.60.4",
     "@rollup/plugin-node-resolve": "^16.0.0"
+  },
+  "dependencies": {
+    "docx": "^9.7.1"
   }
 }
