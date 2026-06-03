@@ -37,7 +37,7 @@ export const MAP_DATA = {
   doors: [
     { x: 45, y: 15, type: 'puzzle', puzzleId: 1, reward: 'Kawi Script Deciphering — Ramuan Kesehatan & 50 Rupiah' },
   ],
-  exitDoor: { x: 79, y: 15, targetMap: 2 },
+  exitDoor: { x: 79, y: 16, targetMap: 2 },
   bossAltar: { x: 73, y: 16 },
 };
 
@@ -140,7 +140,7 @@ export function generateMap(fillRect) {
   map[H - 4][73] = 12;
 
   // Exit door (tile 11) — large gate, blocked until boss defeated
-  map[H - 5][79] = 11;
+  map[H - 4][79] = 11;
 
   // Checkpoints (tile 9)
   map[H - 4][28] = 9;

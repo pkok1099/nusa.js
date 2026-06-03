@@ -39,7 +39,7 @@ export const MAP_DATA = {
   doors: [
     { x: 56, y: 21, type: 'puzzle', puzzleId: 4, reward: 'Airlangga Water Channels — Ramuan Stamina & 200 Rupiah' },
   ],
-  exitDoor: { x: 109, y: 21, targetMap: 5 },
+  exitDoor: { x: 109, y: 22, targetMap: 5 },
   bossAltar: { x: 100, y: 22 },
 };
 
@@ -158,7 +158,7 @@ export function generateMap(fillRect) {
   map[H - 4][100] = 12;
 
   // Exit door (tile 11) — blocked until boss defeated
-  map[H - 5][109] = 11;
+  map[H - 4][109] = 11;
 
   // Checkpoints (tile 9)
   map[H - 4][20] = 9;

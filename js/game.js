@@ -564,6 +564,8 @@ function gameLoop() {
         if (!clearedMaps[currentMapId]) {
           markBossDefeated(currentMapId);
         }
+        // BUG FIX: Reset bossActive after victory so altar can be re-interacted
+        bossActive = false;
         autoSave();
         // Start boss defeat dialog, then unlock dialog
         const mapData = getMapData(currentMapId);

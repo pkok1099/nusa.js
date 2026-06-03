@@ -39,7 +39,7 @@ export const MAP_DATA = {
   doors: [
     { x: 52, y: 19, type: 'puzzle', puzzleId: 3, reward: 'Gamelan Gong Sequence — Ramuan Kesehatan & 120 Rupiah' },
   ],
-  exitDoor: { x: 99, y: 19, targetMap: 4 },
+  exitDoor: { x: 99, y: 20, targetMap: 4 },
   bossAltar: { x: 90, y: 20 },
 };
 
@@ -166,7 +166,7 @@ export function generateMap(fillRect) {
   map[H - 4][90] = 12;
 
   // Exit door (tile 11) — blocked until boss defeated
-  map[H - 5][99] = 11;
+  map[H - 4][99] = 11;
 
   // Checkpoints (tile 9)
   map[H - 4][20] = 9;

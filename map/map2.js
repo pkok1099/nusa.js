@@ -36,7 +36,7 @@ export const MAP_DATA = {
   doors: [
     { x: 38, y: 17, type: 'puzzle', puzzleId: 2, reward: 'Batik Pattern Completion — Ramuan Stamina & 80 Rupiah' },
   ],
-  exitDoor: { x: 89, y: 17, targetMap: 3 },
+  exitDoor: { x: 89, y: 18, targetMap: 3 },
   bossAltar: { x: 80, y: 18 },
 };
 
@@ -138,7 +138,7 @@ export function generateMap(fillRect) {
   map[H - 4][80] = 12;
 
   // Exit door (tile 11) — blocked until boss defeated
-  map[H - 5][89] = 11;
+  map[H - 4][89] = 11;
 
   // Checkpoints (tile 9)
   map[H - 4][18] = 9;
